@@ -6,9 +6,10 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Protocol
 
-from sqlalchemy import URL, event
+from sqlalchemy import URL, event, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import (
+    AsyncConnection,
     AsyncEngine,
     AsyncSession,
     async_sessionmaker,
@@ -17,7 +18,7 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.pool import ConnectionPoolEntry, NullPool
 
 from harness.core.errors import MemoryStoreError
-from harness.memory.consts import MSG_DB_FAILED, PRAGMAS, SQLITE_DRIVER
+from harness.memory.consts import MSG_DB_FAILED, PRAGMA_DATA_VERSION, PRAGMAS, SQLITE_DRIVER
 
 
 class _Cursor(Protocol):
@@ -67,6 +68,7 @@ class Database:
         self.engine = create_engine(path)
         self._sessions = async_sessionmaker(self.engine, expire_on_commit=False)
         self._write_lock = asyncio.Lock()
+        self._watcher: AsyncConnection | None = None
 
     @asynccontextmanager
     async def read(self) -> AsyncGenerator[AsyncSession]:
@@ -87,6 +89,25 @@ class Database:
             except SQLAlchemyError as error:
                 raise MemoryStoreError(MSG_DB_FAILED.format(error=error)) from error
 
+    async def data_version(self) -> int:
+        """Return ``PRAGMA data_version`` as seen by one long-lived connection.
+
+        The value changes only when a different connection (of this or another process)
+        commits, so the watching connection is kept open between calls.
+        """
+        try:
+            if self._watcher is None:
+                self._watcher = await self.engine.connect()
+            found = await self._watcher.execute(text(PRAGMA_DATA_VERSION))
+            version = int(found.scalar_one())
+            await self._watcher.rollback()
+        except SQLAlchemyError as error:
+            raise MemoryStoreError(MSG_DB_FAILED.format(error=error)) from error
+        return version
+
     async def close(self) -> None:
         """Dispose the engine."""
+        if self._watcher is not None:
+            await self._watcher.close()
+            self._watcher = None
         await self.engine.dispose()

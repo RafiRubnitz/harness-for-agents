@@ -123,6 +123,7 @@ forbidden_modules = [
     "harness.embedder_server",
     "harness.gui",
     "harness.hooks",
+    "harness.local_server",
     "harness.memory",
     "harness.models",
     "harness.tools",
@@ -140,6 +141,7 @@ forbidden_modules = [
     "harness.dispatcher",
     "harness.embedder_server",
     "harness.hooks",
+    "harness.local_server",
     "harness.memory",
     "harness.models",
     "harness.tools",
@@ -154,11 +156,27 @@ source_modules = [
     "harness.context",
     "harness.embedder_server",
     "harness.hooks",
+    "harness.local_server",
     "harness.memory",
     "harness.models",
     "harness.tools",
 ]
 forbidden_modules = ["harness.app", "harness.cli", "harness.dispatcher", "harness.gui"]
+
+[[tool.importlinter.contracts]]
+name = "the local server reaches the core only through harness.core"
+type = "forbidden"
+source_modules = ["harness.local_server"]
+forbidden_modules = [
+    "harness.agents",
+    "harness.config",
+    "harness.context",
+    "harness.embedder_server",
+    "harness.hooks",
+    "harness.memory",
+    "harness.models",
+    "harness.tools",
+]
 
 [[tool.importlinter.contracts]]
 name = "the embeddings server is a separate process that shares only harness.core"

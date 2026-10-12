@@ -32,6 +32,7 @@ class AgentCreate(_Command):
 
     name: Literal[CommandName.AGENT_CREATE] = CommandName.AGENT_CREATE
     agent_name: str
+    description: str = ""
     model: str = DEFAULT_MODEL_ALIAS
     system_prompt: str = ""
     tools: list[str] = []
@@ -40,7 +41,7 @@ class AgentCreate(_Command):
 
 
 class AgentUpdate(_Command):
-    """Change an agent's name, model, prompt, tools, or settings."""
+    """Change an agent's name, description, model, prompt, tools, or settings."""
 
     name: Literal[CommandName.AGENT_UPDATE] = CommandName.AGENT_UPDATE
     agent_id: AgentId

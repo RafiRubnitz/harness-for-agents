@@ -26,9 +26,21 @@ MATCH_AGENT: Final = "agent"
 MATCH_TEMPLATE: Final = "template"
 MATCH_PATH_GLOB: Final = "path_glob"
 MATCH_SOURCE_TYPE: Final = "source_type"
+MATCH_SOURCE: Final = "source"  # address of the sender: agent:coder, agent:*, api:*
+MATCH_TARGET: Final = "target"  # address of the receiving agent
 MATCH_KEYS: Final = frozenset(
-    {MATCH_TOOL, MATCH_AGENT, MATCH_TEMPLATE, MATCH_PATH_GLOB, MATCH_SOURCE_TYPE}
+    {
+        MATCH_TOOL,
+        MATCH_AGENT,
+        MATCH_TEMPLATE,
+        MATCH_PATH_GLOB,
+        MATCH_SOURCE_TYPE,
+        MATCH_SOURCE,
+        MATCH_TARGET,
+    }
 )
+ADDRESS: Final = "{type}:{id}"
+TARGET_TYPE: Final = "agent"
 PAYLOAD_TOOL: Final = "tool"
 PAYLOAD_INPUT: Final = "input"
 PAYLOAD_PATH: Final = "path"
@@ -37,6 +49,8 @@ PAYLOAD_TEMPLATE: Final = "template"
 PAYLOAD_ORIGIN: Final = "origin"
 PAYLOAD_SOURCE: Final = "source"
 PAYLOAD_TYPE: Final = "type"
+PAYLOAD_ID: Final = "id"
+PAYLOAD_SOURCE_NAME: Final = "source_name"
 
 # --- merging (05 §4) ---
 DECISION_RANK: Final[dict[Decision | None, int]] = {

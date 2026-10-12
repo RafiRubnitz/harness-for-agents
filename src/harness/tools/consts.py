@@ -59,7 +59,8 @@ GROUP_CONTEXT: Final = "context"
 GROUP_MEMORY: Final = "memory"
 GROUP_TASKS: Final = "tasks"
 GROUP_WEB: Final = "web"
-ALWAYS_ON_GROUPS: Final = frozenset({GROUP_CONTEXT, GROUP_TASKS})
+GROUP_MESSAGING: Final = "messaging"
+ALWAYS_ON_GROUPS: Final = frozenset({GROUP_CONTEXT, GROUP_TASKS, GROUP_MESSAGING})
 """Groups every agent that has at least one tool gets without asking for them."""
 
 # --- Background tasks (08 §6a) ---
@@ -71,6 +72,14 @@ TASK_LINE: Final = "{task_id}  {tool}  {status}  {seconds} s"
 MSG_TASK_CANCELLED: Final = "the task was cancelled"
 MSG_TASK_NOT_FOUND: Final = "you have no background task with the id {task_id!r}"
 MSG_NO_TASKS: Final = "no background tasks"
+
+# --- Messaging between agents (phase 2, 03 §4-§5) ---
+META_MESSAGE_ID: Final = "message_id"
+META_CONVERSATION_ID: Final = "conversation_id"
+META_DELIVERED: Final = "delivered"
+META_REJECTED: Final = "rejected"
+MSG_NO_AGENTS: Final = "there are no other agents"
+MSG_NO_TARGETS: Final = "'to' must name at least one agent"
 
 # --- Custom tools (08 §4.2) ---
 CUSTOM_TOOL_GLOB: Final = "*.py"

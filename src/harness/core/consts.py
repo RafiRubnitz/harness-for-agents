@@ -158,6 +158,10 @@ class ErrorCode(StrEnum):
     HOOK_DENIED = "hook.denied"
     AGENT_NOT_FOUND = "agent.not_found"
     AGENT_INVALID_TRANSITION = "agent.invalid_transition"
+    AGENT_NAME_INVALID = "agent.name_invalid"
+    AGENT_NAME_TAKEN = "agent.name_taken"
+    MESSAGING_CONVERSATION_LIMIT = "messaging.conversation_limit"
+    MESSAGING_UNAUTHORIZED = "messaging.unauthorized"
     CONTEXT_COMPACTION_FAILED = "context.compaction_failed"
     CONTEXT_PINNED_TRIMMED = "context.pinned_trimmed"
     APP_CORE_LOCKED = "app.core_locked"
@@ -369,10 +373,23 @@ class AddressType(StrEnum):
     TASK = "task"
     SCHEDULE = "schedule"  # reserved (phase 2)
     FILE_WATCH = "file_watch"  # reserved (phase 2)
-    CLI = "cli"  # reserved (phase 2)
+    CLI = "cli"
     HOOK = "hook"  # reserved (phase 2)
-    API = "api"  # reserved (future)
-    AGENT = "agent"  # reserved (future)
+    API = "api"
+    AGENT = "agent"
+
+
+class RejectReason(StrEnum):
+    """Why a message did not reach a target's inbox (phase2-03 §5, §7)."""
+
+    NOT_FOUND = "not_found"
+    ARCHIVED = "archived"
+    SELF = "self"
+    BLOCKED = "blocked"
+    HOOK = "hook"
+    HOP_LIMIT = "hop_limit"
+    RATE_LIMIT = "rate_limit"
+    CONVERSATION_LIMIT = "conversation_limit"
 
 
 class MessageRole(StrEnum):
@@ -474,6 +491,7 @@ ID_PREFIX_REQUEST: Final = "req_"
 ID_PREFIX_BLOB: Final = "blob_"
 ID_PREFIX_MODEL_CALL: Final = "mc_"
 ID_PREFIX_EVENT: Final = "evt_"
+ID_PREFIX_CONVERSATION: Final = "conv_"
 ULID_LENGTH: Final = 26
 
 # --- Shared ``metadata`` keys ---
@@ -510,6 +528,15 @@ DEFAULT_MODEL_ALIAS: Final = "main"
 DEFAULT_MAX_STEPS: Final = 50
 DEFAULT_TOOL_TIMEOUT_S: Final = 120
 DEFAULT_USER_ID: Final = "local"
+
+# --- Agent names and addresses (phase2-03 §3) ---
+AGENT_NAME_PATTERN: Final = r"[a-z0-9]+(?:-[a-z0-9]+)*"
+ADDRESS_SEPARATOR: Final = ":"
+ADDRESS_ANY: Final = "*"
+
+# --- Inbox priority (phase2-03 §7a) ---
+USER_PRIORITY: Final = 100
+"""The local user's priority; no other source can reach it, by config or by waiting."""
 
 # --- Home directory layout ---
 HARNESS_HOME_ENV: Final = "HARNESS_HOME"

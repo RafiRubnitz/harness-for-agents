@@ -13,7 +13,10 @@ META_CLEAN_SHUTDOWN: Final = "clean_shutdown"
 FIELD_SETTINGS: Final = "settings"
 FIELD_TEMPLATE: Final = "template"
 FIELD_NAME: Final = "name"
-UPDATABLE_FIELDS: Final = frozenset({FIELD_NAME, "model", "system_prompt", "tools", FIELD_SETTINGS})
+FIELD_DESCRIPTION: Final = "description"
+UPDATABLE_FIELDS: Final = frozenset(
+    {FIELD_NAME, FIELD_DESCRIPTION, "model", "system_prompt", "tools", FIELD_SETTINGS}
+)
 
 # Keys of persisted payloads.
 RESULT_CONTENT_KEY: Final = "content"
@@ -51,3 +54,18 @@ MSG_TEMPLATE_NOT_FOUND: Final = "template {name!r} not found"
 MSG_HOOK_DENIED: Final = "{event} was denied by a hook: {reasons}"
 MSG_STREAM_INCOMPLETE: Final = "the model stream ended without a response"
 MSG_RUN_FAILED: Final = "run failed: {error}"
+MSG_NAME_INVALID: Final = (
+    "agent name {name!r} is not valid: use lowercase letters, digits and '-' (e.g. code-reviewer)"
+)
+MSG_NAME_TAKEN: Final = "another agent is already called {name!r}"
+
+# --- Messaging between agents (phase 2, 03) ---
+INBOX_WATCH_TASK_NAME: Final = "inbox-watch"
+SECONDS_PER_HOUR: Final = 3600.0
+FIRST_HOP: Final = 1
+MSG_CONVERSATION_LIMIT: Final = (
+    "conversation {conversation_id} between agents reached its limit of {limit} messages "
+    "and was stopped; message from {sender} to {target} was not delivered"
+)
+MSG_REPLY_UNKNOWN: Final = "you received no message with the id {message_id!r}"
+MSG_REPLY_NOT_AGENT: Final = "message {message_id!r} did not come from an agent; just answer it"

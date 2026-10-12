@@ -15,6 +15,7 @@ from harness.agents.consts import (
 from harness.agents.loop import RunLoop
 from harness.agents.runtime import AgentDeps, AgentRuntime, OpenCalls, RunStart, StatusBoard
 from harness.agents.toolcalls import ToolRunner
+from harness.config import InboxConfig
 from harness.core.consts import (
     ID_PREFIX_MESSAGE,
     ID_PREFIX_RUN,
@@ -106,7 +107,8 @@ class RunController:
         async with rt.lock:
             if rt.status is not _S.IDLE or rt.deleted:
                 return
-            pending = await self._deps.memory.pending_inbox(rt.id)
+            aging_s = self._deps.config.section(InboxConfig).aging_s or None
+            pending = await self._deps.memory.pending_inbox(rt.id, aging_s=aging_s)
             waking = [item for item in pending if self.wakes(item.origin)]
             if waking:
                 await self.start_run(rt, RunStart(waking[0].content, waking[0].origin))

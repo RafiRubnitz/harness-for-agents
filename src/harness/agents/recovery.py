@@ -2,6 +2,7 @@
 
 from harness.agents.consts import MSG_TASK_INTERRUPTED, TASK_INTERRUPTED_ERROR
 from harness.agents.runtime import AgentDeps
+from harness.config import InboxConfig
 from harness.core.consts import ID_PREFIX_INBOX, AddressType, TaskStatus
 from harness.core.records import InboxItem
 from harness.core.types import Address, MessageOrigin, TextBlock
@@ -37,6 +38,7 @@ async def fail_interrupted_tasks(deps: AgentDeps) -> int:
                 content=[TextBlock(text=MSG_TASK_INTERRUPTED.format(task_id=task.id))],
                 origin=MessageOrigin(source=Address(type=AddressType.TASK, id=task.id)),
                 received_at=now,
+                priority=deps.config.section(InboxConfig).priority_of(AddressType.TASK),
             )
         )
     return len(interrupted)

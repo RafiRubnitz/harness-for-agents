@@ -1,16 +1,49 @@
 """Pure helpers for building model requests out of history."""
 
 from collections.abc import Sequence
+from html import escape
 
 from harness.context.consts import (
+    AGENT_MESSAGE_BLOCK,
+    AGENT_MESSAGE_CLOSE,
+    AGENT_MESSAGE_CLOSE_SHOWN,
     BYTES_PER_TOKEN_ESTIMATE,
     LINE_SEPARATOR,
+    TAG_AGENT_MESSAGE,
     TAGGED_BLOCK,
     TEXT_ENCODING,
 )
-from harness.core.consts import MessageRole
+from harness.core.consts import AddressType, MessageRole
 from harness.core.records import MessageRecord
-from harness.core.types import ContentBlock, Message, TextBlock
+from harness.core.types import ContentBlock, Message, MessageOrigin, TextBlock
+
+
+def agent_message(origin: MessageOrigin, body: str) -> str:
+    """Wrap a message another agent sent, so the model can tell it from the user's words.
+
+    The attributes come from the core (never from the content), and a closing tag inside
+    the body is defused so the sender cannot end the block early.
+    """
+    return AGENT_MESSAGE_BLOCK.format(
+        tag=TAG_AGENT_MESSAGE,
+        source=escape(str(origin.source)),
+        name=escape(origin.source_name or origin.source.id),
+        message_id=escape(origin.message_id or ""),
+        conversation=escape(origin.conversation_id or ""),
+        expects_reply=str(origin.expects_reply).lower(),
+        hop=origin.hop,
+        body=body.replace(AGENT_MESSAGE_CLOSE, AGENT_MESSAGE_CLOSE_SHOWN),
+    )
+
+
+def _content(record: MessageRecord) -> list[ContentBlock]:
+    """The blocks the model gets for one record; agent messages are wrapped."""
+    origin = record.origin
+    from_agent = origin is not None and origin.source.type is AddressType.AGENT
+    if origin is None or not from_agent or record.role is not MessageRole.USER:
+        return list(record.content)
+    others = [block for block in record.content if not isinstance(block, TextBlock)]
+    return [TextBlock(text=agent_message(origin, plain_text(record.content))), *others]
 
 
 def to_messages(records: Sequence[MessageRecord]) -> list[Message]:
@@ -25,9 +58,9 @@ def to_messages(records: Sequence[MessageRecord]) -> list[Message]:
             continue
         role = "assistant" if record.role is MessageRole.ASSISTANT else "user"
         if messages and messages[-1].role == role:
-            messages[-1] = Message(role=role, content=[*messages[-1].content, *record.content])
+            messages[-1] = Message(role=role, content=[*messages[-1].content, *_content(record)])
         else:
-            messages.append(Message(role=role, content=list(record.content)))
+            messages.append(Message(role=role, content=_content(record)))
     return messages
 
 

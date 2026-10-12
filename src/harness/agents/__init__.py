@@ -10,6 +10,7 @@ from pydantic import JsonValue
 
 from harness.agents.events import EventBus, Subscription
 from harness.agents.manager import DefaultAgentManager
+from harness.agents.messaging import MessagingService
 from harness.agents.runtime import AgentDeps
 from harness.core.consts import PermissionAnswer, PermissionScope
 from harness.core.events import Event
@@ -35,7 +36,7 @@ class AgentManager(Protocol):
         agent_id: AgentId,
         content: list[ContentBlock],
         origin: MessageOrigin | None = None,
-    ) -> None: ...
+    ) -> bool: ...
     async def stop(self, agent_id: AgentId) -> None: ...
     async def pause(self, agent_id: AgentId) -> None: ...
     async def resume(self, agent_id: AgentId) -> None: ...
@@ -59,5 +60,6 @@ __all__ = [
     "AgentManager",
     "DefaultAgentManager",
     "EventBus",
+    "MessagingService",
     "Subscription",
 ]

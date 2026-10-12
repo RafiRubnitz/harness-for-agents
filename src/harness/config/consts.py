@@ -80,6 +80,25 @@ SHELL_EXECUTABLE_AUTO: Final = "auto"
 SHELL_TIMEOUT_S_DEFAULT: Final = 120
 WEB_PROVIDER_DEFAULT: Final = "firecrawl"
 
+# --- Messaging between agents and the inbox (phase 2: 03, 02 §5a) ---
+MESSAGING_MAX_PER_HOUR_DEFAULT: Final = 30
+MESSAGING_MAX_PER_CONVERSATION_DEFAULT: Final = 20
+MESSAGING_MAX_AGENT_HOPS_DEFAULT: Final = 5
+INBOX_PRIORITIES_DEFAULT: Final = {
+    "task": 80,
+    "cli": 60,
+    "api": 60,
+    "agent": 50,
+    "hook": 40,
+    "schedule": 30,
+    "file_watch": 30,
+}
+INBOX_AGING_S_DEFAULT: Final = 300.0
+INBOX_POLL_INTERVAL_S_DEFAULT: Final = 2.0
+LOCAL_SERVER_PORT_DEFAULT: Final = 8766
+MSG_PRIORITY_USER: Final = "the priority of 'user' is fixed (always the highest)"
+MSG_PRIORITY_RANGE: Final = "priority of {source!r} must be between 0 and {highest}"
+
 # --- Layering ---
 ENV_PREFIX: Final = "HARNESS_"
 ENV_NESTING_SEPARATOR: Final = "__"
@@ -109,9 +128,12 @@ GLOBAL_ONLY_KEYS: Final = frozenset(
         "projects",
         "logging",
         "web",
+        "local_server",
     }
 )
-RESTART_KEYS: Final = frozenset({"version", "memory.paths", "embedder", "logging.level"})
+RESTART_KEYS: Final = frozenset(
+    {"version", "memory.paths", "embedder", "logging.level", "local_server"}
+)
 
 # --- Secrets ---
 KEYRING_SERVICE: Final = "harness"

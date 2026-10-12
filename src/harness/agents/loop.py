@@ -1,5 +1,6 @@
 """The agent run loop (04 §5): steps of model call + tool calls until the model stops."""
 
+from collections.abc import Callable
 from enum import Enum, auto
 
 from harness.agents.approvals import ApprovalDesk
@@ -7,6 +8,7 @@ from harness.agents.consts import COMPONENT_MODELS, MSG_STREAM_INCOMPLETE
 from harness.agents.hooking import HookCaller
 from harness.agents.runtime import AgentDeps, AgentRuntime, OpenCalls, RunStart, StatusBoard
 from harness.agents.toolcalls import ToolRunner
+from harness.config import InboxConfig
 from harness.core.consts import (
     ID_PREFIX_MESSAGE,
     AgentEventType,
@@ -74,12 +76,15 @@ class RunLoop:
         desk: ApprovalDesk,
         runner: ToolRunner,
         status: StatusBoard,
+        *,
+        inbox_taken: Callable[[AgentRuntime], None] | None = None,
     ) -> None:
         self._deps = deps
         self._hooks = hooks
         self._desk = desk
         self._runner = runner
         self._status = status
+        self._inbox_taken = inbox_taken
 
     async def run(
         self,
@@ -138,9 +143,13 @@ class RunLoop:
 
     async def _step(self, rt: AgentRuntime, run: RunRecord) -> _Step:
         memory = self._deps.memory
-        for injected in await memory.inject_inbox(rt.id, run.id, step=run.step_count):
+        aging_s = self._deps.config.section(InboxConfig).aging_s or None
+        taken = await memory.inject_inbox(rt.id, run.id, step=run.step_count, aging_s=aging_s)
+        for injected in taken:
             rt.last_seq = injected.seq
             self._deps.bus.publish(rt.id, MessageAppended(message=injected))
+        if taken and self._inbox_taken is not None:
+            self._inbox_taken(rt)
         hook_context = list(rt.record.pending_hook_context)
         built = await self._deps.context.build(rt.id)
         # the automatic memory search stores its ids on the run; keep this copy in step

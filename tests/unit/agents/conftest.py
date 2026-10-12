@@ -16,6 +16,7 @@ from harness.core.consts import AgentStatus, EventName, HookEvent
 from harness.core.events import Event
 from harness.core.records import AgentSettings, AgentSpec
 from harness.core.types import AgentId, TextBlock
+from harness.core.utils.names import free_name
 from harness.core.utils.paths import HarnessHome
 from harness.memory import Memory, MemoryStore
 from tests.consts import AGENT_NAME, USER_ID
@@ -54,7 +55,10 @@ class AgentEnv:
 
     async def create(self, **settings: JsonValue) -> AgentId:
         """Create an agent with the given settings."""
-        spec = AgentSpec(name=AGENT_NAME, settings=AgentSettings.model_validate(settings))
+        taken = {agent.name for agent in self.manager.list(include_archived=True)}
+        spec = AgentSpec(
+            name=free_name(AGENT_NAME, taken), settings=AgentSettings.model_validate(settings)
+        )
         return await self.manager.create(spec)
 
     async def say(self, agent_id: AgentId, text: str) -> None:

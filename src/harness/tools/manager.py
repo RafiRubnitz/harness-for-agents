@@ -11,6 +11,7 @@ from pydantic import JsonValue
 from harness.config import ConfigManager, ToolsConfig
 from harness.core.consts import META_TASK_ID, ConfigLayer, Decision, ErrorCode, TaskStatus
 from harness.core.errors import AgentNotFoundError, ToolError
+from harness.core.messaging import Messenger
 from harness.core.records import (
     AgentState,
     BackgroundTask,
@@ -37,6 +38,7 @@ from harness.memory import BlobStore, MemoryStore, SemanticMemory
 from harness.tools.background import BackgroundTasks, Emit, TaskSinks
 from harness.tools.builtin import builtin_tools
 from harness.tools.builtin.memory import memory_tools
+from harness.tools.builtin.messaging import messaging_tools
 from harness.tools.builtin.tasks import task_tools
 from harness.tools.consts import MCP_CONFIG_KEY, META_STATUS, MSG_TOOL_NOT_AVAILABLE
 from harness.tools.custom import CustomTools
@@ -73,6 +75,7 @@ class ToolsDeps:
     history: MemoryStore | None = None
     task_status: Callable[[BackgroundTaskRecord], None] | None = None
     task_done: Callable[[BackgroundTaskRecord, str], Awaitable[None]] | None = None
+    messenger: Messenger | None = None
 
 
 def _no_status(record: BackgroundTaskRecord) -> None:
@@ -113,6 +116,8 @@ class DefaultToolsManager:
                 deps.history, deps.blobs, deps.clock, deps.ids, sinks
             )
             builtin.extend(task_tools(self._background))
+        if deps.messenger is not None:
+            builtin.extend(messaging_tools(deps.messenger))
         for tool in builtin:
             self._registry.register(tool)
         self._custom = CustomTools(deps.home.tools_dir)
