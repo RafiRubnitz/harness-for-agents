@@ -13,6 +13,7 @@ from harness.core.consts import (
     CONSOLE_FORMAT,
     LOG_FILE_LEVEL,
     LOG_FILENAME,
+    LOG_LIBRARY_LEVEL,
     LOG_RETENTION,
     LOG_ROTATION,
     REDACTED,
@@ -76,4 +77,4 @@ def setup_logging(level: str, log_dir: Path, *, console: bool = True) -> None:
         diagnose=False,
     )
     logger.configure(patcher=redact_record)
-    logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
+    logging.basicConfig(handlers=[InterceptHandler()], level=LOG_LIBRARY_LEVEL, force=True)

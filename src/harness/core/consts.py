@@ -563,6 +563,8 @@ LOG_ROTATION: Final = "10 MB"
 LOG_RETENTION: Final = "14 days"
 LOG_LEVEL_DEFAULT: Final = "INFO"
 LOG_FILE_LEVEL: Final = "DEBUG"
+# stdlib loggers of libraries (markdown_it, aiosqlite, httpcore) flood the sinks at DEBUG
+LOG_LIBRARY_LEVEL: Final = "INFO"
 CONSOLE_FORMAT: Final = (
     "<green>{time:HH:mm:ss.SSS}</green> | <level>{level: <7}</level> | "
     "<cyan>{name}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
