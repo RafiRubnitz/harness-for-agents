@@ -17,7 +17,7 @@
   --sans:'Space Grotesk',system-ui,sans-serif;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-html{scroll-behavior:smooth}
+html{scroll-behavior:smooth;overflow-x:clip}
 body{background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden}
 a{color:inherit}
 code,pre,.mono{font-family:var(--mono)}
@@ -112,6 +112,10 @@ p code,li code,td code{font-size:.88em;background:var(--panel);border:1px solid 
 .agentbox .acts{display:flex;gap:10px;flex-wrap:wrap}
 .agentbox button.btn{cursor:pointer;font-family:var(--mono)}
 @media(max-width:760px){.agentbox{grid-template-columns:1fr}}
+
+/* keep grid children from growing past the viewport (wide <pre> blocks) */
+.two>*,.arch>*,.dec>*,.pillars>*,.agentbox>*,.sh>*{min-width:0}
+p code,li code,td code{overflow-wrap:anywhere}
 
 /* providers table */
 .tbl{width:100%;border-collapse:collapse;font-size:15px}
