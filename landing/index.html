@@ -105,6 +105,14 @@ pre .c{color:var(--dim)}
 .copy:hover{color:var(--accent);border-color:var(--accent)}
 p code,li code,td code{font-size:.88em;background:var(--panel);border:1px solid var(--line);padding:1px 6px;color:var(--text)}
 
+/* agent install */
+.agentbox{display:grid;grid-template-columns:1fr auto;gap:24px;align-items:center;border:1px solid var(--accent);background:rgba(212,255,58,.04);padding:26px;margin-bottom:32px}
+.agentbox h3{font-size:20px;font-weight:600;margin-bottom:6px}
+.agentbox p{color:var(--muted);font-size:15px}
+.agentbox .acts{display:flex;gap:10px;flex-wrap:wrap}
+.agentbox button.btn{cursor:pointer;font-family:var(--mono)}
+@media(max-width:760px){.agentbox{grid-template-columns:1fr}}
+
 /* providers table */
 .tbl{width:100%;border-collapse:collapse;font-size:15px}
 .tbl th{text-align:left;font-family:var(--mono);font-size:12px;font-weight:400;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;padding:0 16px 12px;border-bottom:1px solid var(--line)}
@@ -172,6 +180,7 @@ footer a{color:var(--muted)}
     <ul>
       <li><a href="#why">Why</a></li>
       <li><a href="#start">Quick start</a></li>
+      <li><a href="install.md">install.md</a></li>
       <li><a href="#models">Models</a></li>
       <li><a href="#inside">Architecture</a></li>
       <li><a href="#extend">Extend</a></li>
@@ -244,6 +253,17 @@ footer a{color:var(--muted)}
       <div>
         <h2>From clone to first agent in three steps.</h2>
         <p>You need Python 3.12 and <a href="https://docs.astral.sh/uv/">uv</a>. Everything the harness writes lives in <code>~/.harness/</code>; set <code>HARNESS_HOME</code> to move it.</p>
+      </div>
+    </div>
+    <div class="agentbox reveal">
+      <div>
+        <div class="tag" style="margin-bottom:10px">// let an agent do it</div>
+        <h3>Install with an AI agent</h3>
+        <p>Copy the install guide and paste it into Claude Code, Cursor or any coding agent with a shell. It installs everything end to end, verifies each step, and asks you to enter API keys yourself.</p>
+      </div>
+      <div class="acts">
+        <button class="btn primary" id="copyInstall">Copy install prompt</button>
+        <a class="btn" href="install.md" target="_blank" rel="noopener">View install.md</a>
       </div>
     </div>
     <div class="steps">
@@ -397,6 +417,12 @@ document.querySelectorAll('.copy').forEach(b=>b.addEventListener('click',()=>{
   const txt=pre.textContent.split('\n').map(l=>l.replace(/\s+$/,'')).join('\n').trim();
   navigator.clipboard.writeText(txt).then(()=>{b.textContent='copied';setTimeout(()=>b.textContent='copy',1400)}).catch(()=>{});
 }));
+const ci=document.getElementById('copyInstall');
+ci.addEventListener('click',async()=>{
+  try{const t=await (await fetch('install.md')).text();await navigator.clipboard.writeText(t);ci.textContent='Copied ✓'}
+  catch(e){ci.textContent='Copy failed, open install.md'}
+  setTimeout(()=>ci.textContent='Copy install prompt',1800);
+});
 const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.12});
 document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
 </script>
