@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>harness — local multi-agent harness</title>
+<meta name="description" content="Run several LLM agents side by side on your own computer, each with its own conversation, tools, permissions, memory and hooks.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0c0d0f; --bg2:#131519; --panel:#171a1f; --line:#262a31;
+  --text:#e8e6e1; --muted:#9a9890; --dim:#6b6a65;
+  --accent:#d4ff3a; --accent2:#ff8a3d; --ok:#5fe0a6; --ask:#ffd23a; --deny:#ff5c5c;
+  --mono:'JetBrains Mono',ui-monospace,Consolas,monospace;
+  --sans:'Space Grotesk',system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:inherit}
+code,pre,.mono{font-family:var(--mono)}
+.wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+@media(max-width:600px){.wrap{padding:0 16px}}
+
+/* nav */
+nav{position:sticky;top:0;z-index:10;background:rgba(12,13,15,.82);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+nav .wrap{display:flex;align-items:center;justify-content:space-between;height:60px}
+.logo{font-family:var(--mono);font-weight:600;font-size:15px;text-decoration:none;display:flex;align-items:center;gap:10px}
+.logo i{width:10px;height:10px;background:var(--accent);display:inline-block;box-shadow:0 0 14px var(--accent)}
+nav ul{list-style:none;display:flex;gap:28px;font-size:14px;color:var(--muted)}
+nav ul a{text-decoration:none}
+nav ul a:hover{color:var(--text)}
+.gh{font-family:var(--mono);font-size:13px;border:1px solid var(--line);padding:7px 14px;text-decoration:none;transition:.2s}
+.gh:hover{border-color:var(--accent);color:var(--accent)}
+@media(max-width:760px){nav ul{display:none}}
+
+/* hero */
+.hero{padding:96px 0 72px;position:relative}
+.hero:before{content:"";position:absolute;inset:0;background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);background-size:48px 48px;mask-image:radial-gradient(ellipse at 70% 30%,#000 10%,transparent 65%);opacity:.5;pointer-events:none}
+.hero .wrap{position:relative;display:grid;grid-template-columns:1.1fr .9fr;gap:56px;align-items:center}
+@media(max-width:900px){.hero .wrap{grid-template-columns:1fr}.hero{padding:64px 0 48px}}
+.tag{font-family:var(--mono);font-size:12px;color:var(--accent);letter-spacing:.08em;text-transform:uppercase;margin-bottom:20px}
+h1{font-size:clamp(40px,6.4vw,76px);line-height:1;letter-spacing:-.035em;font-weight:700}
+h1 em{font-style:normal;color:var(--accent)}
+.lede{font-size:19px;color:var(--muted);margin:26px 0 34px;max-width:540px}
+.cta{display:flex;gap:12px;flex-wrap:wrap}
+.btn{font-family:var(--mono);font-size:14px;padding:13px 20px;text-decoration:none;border:1px solid var(--line);transition:.2s}
+.btn.primary{background:var(--accent);color:#0c0d0f;border-color:var(--accent);font-weight:600}
+.btn.primary:hover{box-shadow:0 0 24px rgba(212,255,58,.35)}
+.btn:not(.primary):hover{border-color:var(--text)}
+.meta{display:flex;gap:18px;margin-top:30px;font-family:var(--mono);font-size:12px;color:var(--dim);flex-wrap:wrap}
+
+/* agent console visual */
+.console{background:var(--panel);border:1px solid var(--line);font-family:var(--mono);font-size:12.5px;box-shadow:0 30px 80px -30px rgba(0,0,0,.8)}
+.console .bar{display:flex;gap:6px;padding:11px 14px;border-bottom:1px solid var(--line);align-items:center}
+.console .bar b{width:9px;height:9px;border-radius:50%;background:var(--line)}
+.console .bar span{margin-left:10px;color:var(--dim)}
+.agents{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line)}
+.agent{background:var(--panel);padding:14px;min-height:118px;min-width:0}
+.agent h4{font-size:12px;font-weight:600;display:flex;justify-content:space-between;margin-bottom:8px;gap:6px}
+.agent h4 small{font-weight:400;color:var(--dim);white-space:nowrap}
+.agent p{color:var(--muted);line-height:1.55;overflow-wrap:anywhere}
+.st{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;vertical-align:1px}
+.run{background:var(--ok);box-shadow:0 0 8px var(--ok);animation:pulse 1.6s infinite}
+.wait{background:var(--ask)}
+.idle{background:var(--dim)}
+@keyframes pulse{50%{opacity:.35}}
+.k{color:var(--accent)} .o{color:var(--accent2)} .g{color:var(--ok)} .y{color:var(--ask)} .r{color:var(--deny)} .d{color:var(--dim)}
+.cursor:after{content:"▍";color:var(--accent);animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+
+/* sections */
+section{padding:88px 0;border-top:1px solid var(--line)}
+@media(max-width:600px){section{padding:60px 0}}
+.sh{display:grid;grid-template-columns:220px 1fr;gap:40px;margin-bottom:48px}
+@media(max-width:800px){.sh{grid-template-columns:1fr;gap:12px}}
+.num{font-family:var(--mono);font-size:13px;color:var(--dim)}
+.num b{color:var(--accent);font-weight:400}
+h2{font-size:clamp(28px,3.6vw,42px);line-height:1.1;letter-spacing:-.025em;font-weight:600}
+.sh p{color:var(--muted);margin-top:14px;max-width:640px;font-size:17px}
+
+/* pillars */
+.pillars{display:grid;grid-template-columns:repeat(5,1fr);border:1px solid var(--line)}
+.pillar{padding:24px 20px;border-right:1px solid var(--line)}
+.pillar:last-child{border-right:0}
+.pillar .ic{font-family:var(--mono);color:var(--accent);font-size:13px;margin-bottom:28px}
+.pillar h3{font-size:18px;font-weight:600;margin-bottom:8px}
+.pillar p{font-size:14px;color:var(--muted)}
+@media(max-width:900px){.pillars{grid-template-columns:1fr 1fr}.pillar{border-bottom:1px solid var(--line)}.pillar:nth-child(2n){border-right:0}}
+@media(max-width:520px){.pillars{grid-template-columns:1fr}.pillar{border-right:0}}
+
+/* steps */
+.steps{display:grid;gap:16px}
+.step{display:grid;grid-template-columns:56px 1fr 1.25fr;gap:24px;align-items:start;padding:24px;background:var(--bg2);border:1px solid var(--line)}
+.step>*{min-width:0}
+.step .n{font-family:var(--mono);font-size:28px;color:var(--accent);line-height:1}
+.step h3{font-size:19px;font-weight:600;margin-bottom:6px}
+.step p{color:var(--muted);font-size:15px}
+@media(max-width:860px){.step{grid-template-columns:1fr;gap:12px}}
+pre{background:#08090a;border:1px solid var(--line);padding:16px 18px;font-size:13px;line-height:1.7;overflow-x:auto;color:#cfcdc6;position:relative}
+pre .c{color:var(--dim)}
+.copy{position:absolute;top:8px;right:8px;font-family:var(--mono);font-size:11px;background:var(--panel);color:var(--muted);border:1px solid var(--line);padding:4px 8px;cursor:pointer}
+.copy:hover{color:var(--accent);border-color:var(--accent)}
+p code,li code,td code{font-size:.88em;background:var(--panel);border:1px solid var(--line);padding:1px 6px;color:var(--text)}
+
+/* providers table */
+.tbl{width:100%;border-collapse:collapse;font-size:15px}
+.tbl th{text-align:left;font-family:var(--mono);font-size:12px;font-weight:400;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;padding:0 16px 12px;border-bottom:1px solid var(--line)}
+.tbl td{padding:16px;border-bottom:1px solid var(--line);vertical-align:top}
+.tbl td:first-child{font-family:var(--mono);color:var(--accent);white-space:nowrap}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{font-family:var(--mono);font-size:12.5px;border:1px solid var(--line);padding:4px 10px;background:var(--bg2)}
+.chip b{font-weight:600;color:var(--text)} .chip span{color:var(--dim)}
+.tblwrap{overflow-x:auto}
+.note{margin-top:20px;color:var(--muted);font-size:15px}
+
+/* architecture */
+.arch{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--line);border:1px solid var(--line)}
+.mod{background:var(--bg);padding:22px;transition:background .2s}
+.mod:hover{background:var(--bg2)}
+.mod .pk{font-family:var(--mono);font-size:12.5px;color:var(--accent2);margin-bottom:10px}
+.mod h3{font-size:17px;font-weight:600;margin-bottom:6px}
+.mod p{font-size:14px;color:var(--muted)}
+.mod.core{grid-column:1/-1;display:flex;gap:24px;align-items:baseline;flex-wrap:wrap}
+.mod.core .pk{color:var(--accent);margin:0}
+@media(max-width:860px){.arch{grid-template-columns:1fr 1fr}}
+@media(max-width:520px){.arch{grid-template-columns:1fr}}
+.flow{margin-top:24px;font-family:var(--mono);font-size:13px;color:var(--muted);display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.flow span{border:1px solid var(--line);padding:6px 12px;background:var(--bg2);color:var(--text)}
+
+/* two column */
+.two{display:grid;grid-template-columns:1fr 1fr;gap:32px}
+@media(max-width:860px){.two{grid-template-columns:1fr}}
+.card{border:1px solid var(--line);background:var(--bg2);padding:26px}
+.card h3{font-size:20px;font-weight:600;margin-bottom:10px}
+.card > p{color:var(--muted);font-size:15px;margin-bottom:18px}
+.card ul{list-style:none;display:grid;gap:10px;margin-bottom:18px}
+.card li{font-size:15px;color:var(--muted);padding-left:20px;position:relative}
+.card li:before{content:"→";position:absolute;left:0;color:var(--accent);font-family:var(--mono)}
+.card li b{color:var(--text);font-weight:500}
+
+/* decisions */
+.dec{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:8px}
+.dec div{border:1px solid var(--line);padding:20px;background:var(--bg2)}
+.dec .lbl{font-family:var(--mono);font-size:13px;font-weight:600;margin-bottom:8px}
+.dec p{font-size:14px;color:var(--muted)}
+@media(max-width:700px){.dec{grid-template-columns:1fr}}
+
+/* status */
+.status{border:1px dashed var(--accent2);padding:24px 26px;display:flex;gap:20px;align-items:flex-start;background:rgba(255,138,61,.04)}
+.status .ic{font-family:var(--mono);color:var(--accent2);font-size:13px;white-space:nowrap;padding-top:2px}
+.status p{color:var(--muted);font-size:15px}
+.status p b{color:var(--text);font-weight:500}
+@media(max-width:600px){.status{flex-direction:column;gap:8px}}
+
+footer{border-top:1px solid var(--line);padding:36px 0;font-family:var(--mono);font-size:12.5px;color:var(--dim)}
+footer .wrap{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+footer a{color:var(--muted)}
+
+.reveal{opacity:0;transform:translateY(14px);transition:opacity .6s ease,transform .6s ease}
+.reveal.in{opacity:1;transform:none}
+@media(prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none}.run,.cursor:after{animation:none}html{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="logo" href="#"><i></i>harness</a>
+    <ul>
+      <li><a href="#why">Why</a></li>
+      <li><a href="#start">Quick start</a></li>
+      <li><a href="#models">Models</a></li>
+      <li><a href="#inside">Architecture</a></li>
+      <li><a href="#extend">Extend</a></li>
+    </ul>
+    <a class="gh" href="https://github.com/RafiRubnitz/harness-for-agents">GitHub ↗</a>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <div>
+      <div class="tag">// local multi-agent harness</div>
+      <h1>Many agents.<br>One machine.<br><em>Your rules.</em></h1>
+      <p class="lede">Run several LLM agents side by side on your own computer. Each one gets its own conversation, model, tools, permissions, memory and hooks, and the history, memory and config all stay on your disk.</p>
+      <div class="cta">
+        <a class="btn primary" href="#start">Get started →</a>
+        <a class="btn" href="https://github.com/RafiRubnitz/harness-for-agents">View the source</a>
+      </div>
+      <div class="meta"><span>Python 3.12</span><span>·</span><span>uv</span><span>·</span><span>Windows 11</span><span>·</span><span>v0.1.0 MVP</span></div>
+    </div>
+
+    <div class="console reveal" aria-hidden="true">
+      <div class="bar"><b></b><b></b><b></b><span>harness — 4 agents</span></div>
+      <div class="agents">
+        <div class="agent">
+          <h4><span><i class="st run"></i>researcher</span><small>main</small></h4>
+          <p><span class="d">tool</span> <span class="k">web_search</span>("sqlite wal mode")<br><span class="g">✓ allow</span> <span class="d">· 8 results</span></p>
+        </div>
+        <div class="agent">
+          <h4><span><i class="st wait"></i>refactor</span><small>fast</small></h4>
+          <p><span class="d">tool</span> <span class="k">shell</span>("git push")<br><span class="y">? ask</span> <span class="d">· waiting for you</span></p>
+        </div>
+        <div class="agent">
+          <h4><span><i class="st run"></i>reviewer</span><small>deepseek</small></h4>
+          <p><span class="d">tool</span> <span class="k">files.grep</span>("TODO")<br><span class="o">⧗ background</span> <span class="d">· task 01J9…</span></p>
+        </div>
+        <div class="agent">
+          <h4><span><i class="st idle"></i>notes</span><small>cheap</small></h4>
+          <p><span class="d">tool</span> <span class="k">files.delete</span>("/etc/…")<br><span class="r">✕ deny</span> <span class="d">· hook: protect-system</span></p>
+        </div>
+      </div>
+      <div style="padding:12px 14px;border-top:1px solid var(--line);color:var(--muted)"><span class="k">›</span> <span class="cursor">summarize what the reviewer found</span></div>
+    </div>
+  </div>
+</header>
+
+<section id="why">
+  <div class="wrap">
+    <div class="sh reveal">
+      <div class="num"><b>01</b> / what it is</div>
+      <div>
+        <h2>An agent runtime you own, end to end.</h2>
+        <p>harness is a desktop app and CLI that hosts a team of agents locally. You decide which model each agent uses, which tools it may touch, what it remembers and what has to be approved first.</p>
+      </div>
+    </div>
+    <div class="pillars reveal">
+      <div class="pillar"><div class="ic">[ conv ]</div><h3>Own conversation</h3><p>Every agent keeps its own history in SQLite, with crash recovery and context compaction.</p></div>
+      <div class="pillar"><div class="ic">[ model ]</div><h3>Own model</h3><p>Anthropic, OpenAI or DeepSeek per agent, through one gateway with retry, fallback and cost tracking.</p></div>
+      <div class="pillar"><div class="ic">[ tools ]</div><h3>Own tools</h3><p>Files, shell, web, memory, MCP servers and your own Python tools, hot loaded.</p></div>
+      <div class="pillar"><div class="ic">[ perms ]</div><h3>Own permissions</h3><p>A permission pipeline plus user hooks that allow, ask or deny every tool call.</p></div>
+      <div class="pillar"><div class="ic">[ mem ]</div><h3>Own memory</h3><p>Lexical search out of the box, vector search with a local BGE‑M3 embeddings server.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="start">
+  <div class="wrap">
+    <div class="sh reveal">
+      <div class="num"><b>02</b> / quick start</div>
+      <div>
+        <h2>From clone to first agent in three steps.</h2>
+        <p>You need Python 3.12 and <a href="https://docs.astral.sh/uv/">uv</a>. Everything the harness writes lives in <code>~/.harness/</code>; set <code>HARNESS_HOME</code> to move it.</p>
+      </div>
+    </div>
+    <div class="steps">
+      <div class="step reveal">
+        <div class="n">1</div>
+        <div><h3>Install</h3><p>Clone the repository and let uv create the environment and install every dependency.</p></div>
+<pre><button class="copy">copy</button>git clone https://github.com/RafiRubnitz/harness-for-agents
+cd harness-for-agents
+uv sync</pre>
+      </div>
+      <div class="step reveal">
+        <div class="n">2</div>
+        <div><h3>Add an API key</h3><p>Keys live in the OS keyring under the service <code>harness</code>, never in files. Names: <code>anthropic</code>, <code>openai</code>, <code>deepseek</code>, and optionally <code>firecrawl</code> for the web tools. The GUI settings dialog stores them the same way.</p></div>
+<pre><button class="copy">copy</button>uv run python -c "import keyring; \
+  keyring.set_password('harness', 'anthropic', 'sk-...')"</pre>
+      </div>
+      <div class="step reveal">
+        <div class="n">3</div>
+        <div><h3>Run it</h3><p>Open the desktop GUI to manage many agents at once, or chat with a single agent straight from the terminal.</p></div>
+<pre><button class="copy">copy</button>uv run harness                <span class="c"># desktop GUI (Tkinter)</span>
+uv run harness chat           <span class="c"># one agent in the terminal</span>
+uv run harness chat --new --model main
+uv run harness agents         <span class="c"># list agents and status</span></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="models">
+  <div class="wrap">
+    <div class="sh reveal">
+      <div class="num"><b>03</b> / models</div>
+      <div>
+        <h2>Pick a provider per agent.</h2>
+        <p>The agent dialog asks for the provider first, then one of its models. Short aliases keep commands readable.</p>
+      </div>
+    </div>
+    <div class="tblwrap reveal">
+      <table class="tbl">
+        <thead><tr><th>Provider</th><th>Models &nbsp;alias → id</th></tr></thead>
+        <tbody>
+          <tr><td>anthropic</td><td><div class="chips"><span class="chip"><b>main</b> <span>→ claude-opus-5-5</span></span><span class="chip"><b>fast</b> <span>→ claude-sonnet-5-5</span></span><span class="chip"><b>cheap</b> <span>→ claude-haiku-5-5</span></span></div></td></tr>
+          <tr><td>openai</td><td><div class="chips"><span class="chip"><b>gpt</b> <span>→ gpt-5</span></span><span class="chip"><b>gpt-mini</b> <span>→ gpt-5-mini</span></span></div></td></tr>
+          <tr><td>deepseek</td><td><div class="chips"><span class="chip"><b>deepseek</b> <span>→ deepseek-chat</span></span><span class="chip"><b>deepseek-reasoner</b> <span>→ deepseek-reasoner</span></span></div></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note reveal">Add or change models under <code>models:</code> in <code>config.yaml</code> with a <code>provider</code>, an <code>id</code> and an optional <code>fallback</code>. From the terminal: <code>uv run harness chat --new --model deepseek</code>.</p>
+  </div>
+</section>
+
+<section id="inside">
+  <div class="wrap">
+    <div class="sh reveal">
+      <div class="num"><b>04</b> / architecture</div>
+      <div>
+        <h2>Small components, strict boundaries.</h2>
+        <p>Front ends never reach into the internals. They send commands and listen for events; the dispatcher turns commands into calls, and import contracts enforce the layering in CI.</p>
+      </div>
+    </div>
+    <div class="arch reveal">
+      <div class="mod core"><div class="pk">harness.core</div><h3>Core</h3><p>Types, commands, events, records and errors. Imports no other component.</p></div>
+      <div class="mod"><div class="pk">harness.agents</div><h3>Agents</h3><p>The agent loop, runs, inbox, approvals and crash recovery.</p></div>
+      <div class="mod"><div class="pk">harness.models</div><h3>Models</h3><p>One gateway over Anthropic, OpenAI and DeepSeek: streaming, retry, fallback, cost.</p></div>
+      <div class="mod"><div class="pk">harness.context</div><h3>Context</h3><p>Builds each model request, with compaction and stored tool results.</p></div>
+      <div class="mod"><div class="pk">harness.tools</div><h3>Tools</h3><p>Registry, permission pipeline, safe execution and background tasks.</p></div>
+      <div class="mod"><div class="pk">harness.memory</div><h3>Memory</h3><p>SQLite history, blobs, semantic memory on LanceDB, embeddings server.</p></div>
+      <div class="mod"><div class="pk">harness.hooks</div><h3>Hooks</h3><p>User hooks from <code>hooks.yaml</code>: Python functions or commands.</p></div>
+      <div class="mod"><div class="pk">harness.config</div><h3>Config</h3><p>Layered YAML (global, project, agent), secrets, templates, hot reload.</p></div>
+      <div class="mod"><div class="pk">harness.gui · harness.cli</div><h3>Front ends</h3><p>Desktop GUI and terminal chat, talking only through commands and events.</p></div>
+      <div class="mod"><div class="pk">harness.app</div><h3>Composition root</h3><p>Wires everything together; <code>harness.dispatcher</code> routes commands.</p></div>
+    </div>
+    <div class="flow reveal"><span>GUI / CLI</span>→ command →<span>dispatcher</span>→<span>agents · tools · models</span>→ event →<span>GUI / CLI</span></div>
+  </div>
+</section>
+
+<section id="extend">
+  <div class="wrap">
+    <div class="sh reveal">
+      <div class="num"><b>05</b> / extend</div>
+      <div>
+        <h2>Tools and hooks, your way.</h2>
+        <p>Built in: <code>files</code> (read, write, edit, grep, list, delete with backup), <code>shell</code>, <code>memory</code>, <code>web</code>, plus the always‑on <code>context</code> and <code>tasks</code> groups. Everything else you add yourself.</p>
+      </div>
+    </div>
+    <div class="two">
+      <div class="card reveal">
+        <h3>Custom tools</h3>
+        <p>Drop a Python file into <code>~/.harness/tools/</code>. It is picked up without a restart.</p>
+<pre><button class="copy">copy</button>from harness.tools import tool
+
+
+@tool(group="dev", read_only=True, default_permission="allow")
+async def count_lines(path: str) -> str:
+    """Count the lines of a file."""
+    ...</pre>
+      </div>
+      <div class="card reveal">
+        <h3>MCP and background tasks</h3>
+        <ul>
+          <li><b>MCP servers</b> under <code>mcp_servers:</code> in <code>config.yaml</code>, as a stdio <code>command</code> or an HTTP <code>url</code>. Their tools appear as <code>mcp.&lt;server&gt;.&lt;tool&gt;</code> and ask before running.</li>
+          <li><b>Background runs:</b> any tool call can carry <code>run_in_background: true</code>. The agent gets a task id at once and a <code>&lt;background_task_done&gt;</code> message when it ends.</li>
+          <li><b>Semantic memory:</b> <code>uv sync --extra embedder</code> enables vector search with BGE‑M3 (about 2.3 GB on first use), or point <code>embedder.url</code> at a server you already run.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="card reveal" style="margin-top:32px">
+      <h3>Hooks decide what runs</h3>
+      <p>Hooks in <code>hooks.yaml</code> run a Python function or a command on agent events, and can match on tool, agent, template, path glob or source type. Before a tool call, every matching hook returns a decision and the strictest one wins. If a hook fails before a tool call, the default is to deny.</p>
+      <div class="dec">
+        <div><div class="lbl g">allow</div><p>The call runs straight away.</p></div>
+        <div><div class="lbl y">ask</div><p>The agent pauses until you approve it in the GUI or terminal.</p></div>
+        <div><div class="lbl r">deny</div><p>The call is blocked and the agent is told why.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="dev">
+  <div class="wrap">
+    <div class="sh reveal">
+      <div class="num"><b>06</b> / develop</div>
+      <div>
+        <h2>Checked on every change.</h2>
+        <p>Tests never touch the network or a real model: providers, the embedder and the web are replaced by fakes and mock transports.</p>
+      </div>
+    </div>
+<pre class="reveal"><button class="copy">copy</button>uv run pytest                                  <span class="c"># tests, coverage must stay >= 80 %</span>
+uv run ruff check . && uv run ruff format --check .
+uv run pyright
+uv run lint-imports                            <span class="c"># the architecture contracts</span>
+uv run python scripts/acceptance_report.py     <span class="c"># spec acceptance criteria -> tests</span></pre>
+    <div class="status reveal" style="margin-top:32px">
+      <div class="ic">! status</div>
+      <p><b>This is an MVP (v0.1.0).</b> There are no live tests yet, so nothing in the repository has been run against a real provider. Expect rough edges and please open an issue when you hit one.</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span>harness · a local multi-agent harness</span>
+    <a href="https://github.com/RafiRubnitz/harness-for-agents">github.com/RafiRubnitz/harness-for-agents</a>
+  </div>
+</footer>
+
+<script>
+document.querySelectorAll('.copy').forEach(b=>b.addEventListener('click',()=>{
+  const pre=b.parentElement.cloneNode(true);pre.querySelector('.copy').remove();
+  pre.querySelectorAll('.c').forEach(c=>c.remove());
+  const txt=pre.textContent.split('\n').map(l=>l.replace(/\s+$/,'')).join('\n').trim();
+  navigator.clipboard.writeText(txt).then(()=>{b.textContent='copied';setTimeout(()=>b.textContent='copy',1400)}).catch(()=>{});
+}));
+const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.12});
+document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+</script>
+</body>
+</html>
