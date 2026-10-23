@@ -10,6 +10,7 @@ PRAGMAS: Final = (
     "PRAGMA synchronous=NORMAL",
     "PRAGMA busy_timeout=5000",
 )
+PRAGMA_DATA_VERSION: Final = "PRAGMA data_version"
 PRAGMA_FOREIGN_KEYS_OFF: Final = "PRAGMA foreign_keys=OFF"
 PRAGMA_FOREIGN_KEY_CHECK: Final = "PRAGMA foreign_key_check"
 

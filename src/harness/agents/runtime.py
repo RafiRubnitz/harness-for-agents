@@ -80,6 +80,7 @@ class AgentRuntime:
     last_seq: int = 0
     recovered: bool = False
     deleted: bool = False
+    waiting_agent_messages: int = 0
 
     @property
     def id(self) -> AgentId:

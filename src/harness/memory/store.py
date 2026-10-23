@@ -26,6 +26,7 @@ from harness.core.records import (
     ToolCallRecord,
 )
 from harness.core.types import AgentId, Clock, IdGenerator, PermissionRequestId, RunId
+from harness.core.utils.inbox import in_order
 from harness.memory.blobs import FileBlobStore
 from harness.memory.consts import HISTORY_SEARCH_LIMIT_DEFAULT
 from harness.memory.db import convert, repo
@@ -127,19 +128,56 @@ class SqliteMemoryStore:
             session.add(convert.inbox_row(item))
 
     async def inject_inbox(
-        self, agent_id: AgentId, run_id: RunId, *, step: int | None = None
+        self,
+        agent_id: AgentId,
+        run_id: RunId,
+        *,
+        step: int | None = None,
+        aging_s: float | None = None,
     ) -> list[MessageRecord]:
-        """Move the inbox into history in one transaction; return the new messages."""
+        """Move the inbox into history in one transaction; return the new messages.
+
+        The messages get their seq in handling order: priority first, then arrival.
+        """
         async with self._db.write() as session:
             return await repo.inject_inbox(
-                session, agent_id, run_id, step=step, ids=self._ids, now=self._clock.now()
+                session,
+                agent_id,
+                run_id,
+                step=step,
+                ids=self._ids,
+                now=self._clock.now(),
+                aging_s=aging_s,
             )
 
-    async def pending_inbox(self, agent_id: AgentId) -> list[InboxItem]:
-        """Return inbox items that were not injected yet."""
+    async def pending_inbox(
+        self, agent_id: AgentId, *, aging_s: float | None = None
+    ) -> list[InboxItem]:
+        """Return inbox items that were not injected yet, in handling order."""
         async with self._db.read() as session:
             rows = await repo.pending_inbox(session, agent_id)
-        return [convert.inbox_item(row) for row in rows]
+        return in_order([convert.inbox_item(row) for row in rows], self._clock.now(), aging_s)
+
+    async def agents_with_inbox(self) -> list[AgentId]:
+        """Return the agents that have something in their inbox."""
+        async with self._db.read() as session:
+            return [AgentId(found) for found in await repo.agents_with_inbox(session)]
+
+    async def received_message(self, agent_id: AgentId, message_id: str) -> MessageRecord | None:
+        """Return the message an agent received under the sender's ``message_id``."""
+        async with self._db.read() as session:
+            row = await repo.message_by_origin_id(session, agent_id, message_id)
+        return None if row is None else convert.message_record(row)
+
+    async def last_received(self, agent_id: AgentId) -> MessageRecord | None:
+        """Return the newest message of the agent that came with an origin."""
+        async with self._db.read() as session:
+            row = await repo.last_received(session, agent_id)
+        return None if row is None else convert.message_record(row)
+
+    async def data_version(self) -> int:
+        """Return SQLite's ``data_version``: it changes when another connection commits."""
+        return await self._db.data_version()
 
     # --- runs and recovery ---
 

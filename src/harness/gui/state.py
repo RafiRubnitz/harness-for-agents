@@ -41,8 +41,8 @@ class AgentView:
 
     @property
     def badge(self) -> int:
-        """Open approvals, or else updates not yet seen."""
-        return len(self.approvals) or self.unread
+        """Open approvals, or else messages from agents that wait, or else unseen updates."""
+        return len(self.approvals) or self.state.waiting_agent_messages or self.unread
 
     @property
     def running_tasks(self) -> int:

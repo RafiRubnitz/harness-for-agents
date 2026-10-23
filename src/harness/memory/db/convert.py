@@ -74,6 +74,7 @@ def agent_values(record: AgentRecord) -> dict[str, object]:
     """Column values of an agent, without ``config_overrides`` and ``last_seq``."""
     return {
         "name": record.name,
+        "description": record.description,
         "model": record.model,
         "system_prompt": record.system_prompt,
         "tools": list(record.tools),
@@ -92,6 +93,7 @@ def agent_record(row: AgentRow) -> AgentRecord:
         {
             "id": row.id,
             "name": row.name,
+            "description": row.description,
             "model": row.model,
             "system_prompt": row.system_prompt,
             "tools": row.tools,
@@ -128,6 +130,9 @@ def message_row(record: MessageRecord, seq: int) -> MessageRow:
         conversation_id=origin.conversation_id if origin else None,
         hop=origin.hop if origin else None,
         reply_to=origin.reply_to if origin else None,
+        origin_message_id=origin.message_id if origin else None,
+        origin_source_name=origin.source_name if origin else None,
+        expects_reply=origin.expects_reply if origin else None,
         usage=record.usage.model_dump() if record.usage else None,
         cost_usd=record.cost_usd,
         stop_reason=record.stop_reason,
@@ -146,6 +151,9 @@ def _origin(row: MessageRow) -> MessageOrigin | None:
             "conversation_id": row.conversation_id,
             "hop": row.hop or 0,
             "reply_to": row.reply_to,
+            "message_id": row.origin_message_id,
+            "source_name": row.origin_source_name,
+            "expects_reply": bool(row.expects_reply),
         }
     )
 
@@ -178,6 +186,7 @@ def inbox_row(item: InboxItem) -> InboxRow:
         content=dump_blocks(item.content),
         origin=item.origin.model_dump(mode="json"),
         received_at=item.received_at,
+        priority=item.priority,
     )
 
 
@@ -190,6 +199,7 @@ def inbox_item(row: InboxRow) -> InboxItem:
             "content": row.content,
             "origin": row.origin,
             "received_at": row.received_at,
+            "priority": row.priority,
         }
     )
 

@@ -36,6 +36,7 @@ from harness.core.types import (
     PermissionRequestId,
     RunId,
 )
+from harness.core.utils.inbox import in_order
 from harness.memory import hebrew
 from harness.memory.db import convert
 
@@ -60,6 +61,7 @@ class FakeMemoryStore:
         self.tool_calls: dict[str, ToolCallRecord] = {}
         self.model_calls: dict[str, ModelCallRecord] = {}
         self.meta: dict[str, JsonValue] = {}
+        self.version = 0
 
     def _require(self, agent_id: AgentId) -> AgentRecord:
         if agent_id not in self.agents:
@@ -139,12 +141,18 @@ class FakeMemoryStore:
     async def enqueue_inbox(self, item: InboxItem) -> None:
         self._require(item.agent_id)
         self.inbox.append(item)
+        self.version += 1
 
     async def inject_inbox(
-        self, agent_id: AgentId, run_id: RunId, *, step: int | None = None
+        self,
+        agent_id: AgentId,
+        run_id: RunId,
+        *,
+        step: int | None = None,
+        aging_s: float | None = None,
     ) -> list[MessageRecord]:
         injected: list[MessageRecord] = []
-        for item in await self.pending_inbox(agent_id):
+        for item in await self.pending_inbox(agent_id, aging_s=aging_s):
             record = MessageRecord(
                 id=self._ids.new(ID_PREFIX_MESSAGE),  # type: ignore[arg-type]
                 agent_id=agent_id,
@@ -160,9 +168,29 @@ class FakeMemoryStore:
         self.inbox = [i for i in self.inbox if i.agent_id != agent_id]
         return injected
 
-    async def pending_inbox(self, agent_id: AgentId) -> list[InboxItem]:
+    async def pending_inbox(
+        self, agent_id: AgentId, *, aging_s: float | None = None
+    ) -> list[InboxItem]:
         items = [i for i in self.inbox if i.agent_id == agent_id]
-        return sorted(items, key=lambda i: (i.received_at, i.id))
+        return in_order(items, self._clock.now(), aging_s)
+
+    async def agents_with_inbox(self) -> list[AgentId]:
+        return sorted({i.agent_id for i in self.inbox})
+
+    async def received_message(self, agent_id: AgentId, message_id: str) -> MessageRecord | None:
+        found = [
+            m
+            for m in self.messages
+            if m.agent_id == agent_id and m.origin and m.origin.message_id == message_id
+        ]
+        return found[-1] if found else None
+
+    async def last_received(self, agent_id: AgentId) -> MessageRecord | None:
+        found = [m for m in self.messages if m.agent_id == agent_id and m.origin]
+        return found[-1] if found else None
+
+    async def data_version(self) -> int:
+        return self.version
 
     async def save_run(self, r: RunRecord) -> None:
         self.runs[r.id] = r.model_copy(deep=True)

@@ -1,17 +1,23 @@
 """``DefaultAgentManager``: agent lifecycle, run control and crash recovery (component 4)."""
 
 import asyncio
+from contextlib import suppress
 from pathlib import Path
 
+from loguru import logger
 from pydantic import JsonValue, TypeAdapter
 
 from harness.agents import state
 from harness.agents.approvals import ApprovalDesk
 from harness.agents.consts import (
+    FIELD_NAME,
     FIELD_TEMPLATE,
+    INBOX_WATCH_TASK_NAME,
     META_CLEAN_SHUTDOWN,
     MSG_AGENT_NOT_FOUND,
     MSG_HOOK_DENIED,
+    MSG_NAME_INVALID,
+    MSG_NAME_TAKEN,
     MSG_NO_OPEN_RUN,
     MSG_TEMPLATE_NOT_FOUND,
     UPDATABLE_FIELDS,
@@ -30,10 +36,11 @@ from harness.agents.utils import (
     spec_from_template,
     user_origin,
 )
-from harness.config import AgentTemplate, template_overrides
+from harness.config import AgentTemplate, InboxConfig, template_overrides
 from harness.core.consts import (
     ID_PREFIX_AGENT,
     ID_PREFIX_INBOX,
+    AddressType,
     AgentStatus,
     ErrorCode,
     HookEvent,
@@ -45,6 +52,7 @@ from harness.core.consts import (
 from harness.core.errors import (
     AgentError,
     AgentNotFoundError,
+    HarnessError,
     InvalidTransitionError,
 )
 from harness.core.events import AgentCreated, AgentDeleted, AgentUpdated
@@ -60,6 +68,7 @@ from harness.core.types import (
     MessageOrigin,
     PermissionRequestId,
 )
+from harness.core.utils.names import free_name, slug, valid_name
 
 _BLOCKS = TypeAdapter(list[ContentBlock])
 _S = AgentStatus
@@ -75,8 +84,11 @@ class DefaultAgentManager:
         self._desk = ApprovalDesk(deps, self._status)
         self._hooks = HookCaller(deps, self._desk)
         self._runner = ToolRunner(deps, self._desk)
-        self._loop = RunLoop(deps, self._hooks, self._desk, self._runner, self._status)
+        self._loop = RunLoop(
+            deps, self._hooks, self._desk, self._runner, self._status, inbox_taken=self._inbox_taken
+        )
         self._runs = RunController(deps, self._status, self._desk, self._runner, self._loop)
+        self._watcher: asyncio.Task[None] | None = None
 
     # --- startup and recovery (04 §7a) ---
 
@@ -89,6 +101,10 @@ class DefaultAgentManager:
             rt = AgentRuntime(record=record)
             rt.cost_total = await memory.cost_total(record.id)
             rt.last_seq = await memory.last_seq(record.id)
+            rt.waiting_agent_messages = sum(
+                item.origin.source.type is AddressType.AGENT
+                for item in await memory.pending_inbox(record.id)
+            )
             self._runtimes[record.id] = rt
             working_dir = record.settings.working_dir
             await self._deps.config.load_agent(
@@ -103,15 +119,39 @@ class DefaultAgentManager:
             raise AgentNotFoundError(MSG_AGENT_NOT_FOUND.format(agent_id=agent_id))
         return self._runtimes[agent_id]
 
+    def _inbox_taken(self, rt: AgentRuntime) -> None:
+        """The run loop moved the inbox into the conversation: nothing waits any more."""
+        if rt.waiting_agent_messages and not rt.deleted:
+            rt.waiting_agent_messages = 0
+            self._deps.bus.publish(rt.id, AgentUpdated(agent=self.get(rt.id)))
+
+    # --- names (phase 2, 03 §3) ---
+
+    def _names(self, *, skip: AgentId | None = None) -> set[str]:
+        return {rt.record.name for rt in self._runtimes.values() if rt.id != skip}
+
+    def _check_name(self, name: str, *, skip: AgentId | None = None) -> None:
+        """Refuse a name that cannot be an address, or that another agent has.
+
+        Raises:
+            AgentError: ``agent.name_invalid`` / ``agent.name_taken``.
+        """
+        if not valid_name(name):
+            raise AgentError(MSG_NAME_INVALID.format(name=name), code=ErrorCode.AGENT_NAME_INVALID)
+        if name in self._names(skip=skip):
+            raise AgentError(MSG_NAME_TAKEN.format(name=name), code=ErrorCode.AGENT_NAME_TAKEN)
+
     # --- lifecycle ---
 
     async def create(self, spec: AgentSpec) -> AgentId:
         """Create an agent; it is ``idle`` and has a working directory when this returns.
 
         Raises:
-            AgentError: An ``agent_created`` hook (or the user it asked) refused.
+            AgentError: The name is invalid or taken, or an ``agent_created`` hook (or the
+                user it asked) refused.
         """
         deps = self._deps
+        self._check_name(spec.name)
         agent_id = AgentId(deps.ids.new(ID_PREFIX_AGENT))
         defaults = deps.config.config().agents.defaults
         rt = AgentRuntime(record=new_record(agent_id, spec, defaults, deps.home, deps.clock.now()))
@@ -141,7 +181,10 @@ class DefaultAgentManager:
     ) -> AgentId:
         """Create an agent from a template; the template is copied into the agent layer."""
         found = self._template(template)
-        agent_id = await self.create(spec_from_template(found, overrides))
+        given = dict(overrides or {})
+        if FIELD_NAME not in given:  # the template's own name, made unique: reviewer-2
+            given[FIELD_NAME] = free_name(slug(found.name), self._names())
+        agent_id = await self.create(spec_from_template(found, given))
         layer = template_overrides(found)
         if layer:
             await self._deps.config.set_agent_layer(agent_id, layer)
@@ -151,6 +194,9 @@ class DefaultAgentManager:
         self, rt: AgentRuntime, changes: dict[str, JsonValue], allowed: frozenset[str]
     ) -> None:
         before = rt.record.settings.working_dir
+        renamed = changes.get(FIELD_NAME)
+        if isinstance(renamed, str) and renamed != rt.record.name:
+            self._check_name(renamed, skip=rt.id)
         rt.record = changed_record(rt.record, changes, allowed, self._deps.clock.now())
         await self._deps.memory.save_agent(rt.record)
         after = rt.record.settings.working_dir
@@ -160,7 +206,7 @@ class DefaultAgentManager:
         self._deps.bus.publish(rt.id, AgentUpdated(agent=self.get(rt.id)))
 
     async def update(self, agent_id: AgentId, changes: dict[str, JsonValue]) -> None:
-        """Change an agent's name, model, prompt, tools or settings."""
+        """Change an agent's name, description, model, prompt, tools or settings."""
         await self._apply(self._require(agent_id), changes, UPDATABLE_FIELDS)
 
     async def apply_template(self, template: str, agent_ids: list[AgentId]) -> None:
@@ -226,11 +272,15 @@ class DefaultAgentManager:
         agent_id: AgentId,
         content: list[ContentBlock],
         origin: MessageOrigin | None = None,
-    ) -> None:
+    ) -> bool:
         """Put a message in the agent's inbox; an idle (or failed) agent starts a run.
 
         The single entry point for every writer (04 §6.0). ``origin`` defaults to the
-        local user.
+        local user. The message is committed to the database before the agent is woken.
+
+        Returns:
+            Whether the message was accepted (``False``: a ``message_received`` hook
+            refused it).
         """
         rt = self._require(agent_id)
         state.require_status(rt.status, frozenset(_S) - {_S.ARCHIVED}, "send")
@@ -239,7 +289,7 @@ class DefaultAgentManager:
         payload = MessageReceivedPayload(content=content, origin=source)
         out = await self._hooks.emit(rt, event, payload)
         if not await self._hooks.allowed(rt, event, out) or agent_id not in self._runtimes:
-            return
+            return False
         accepted = _BLOCKS.validate_python(out.payload.get("content", content))
         item = InboxItem(
             id=self._deps.ids.new(ID_PREFIX_INBOX),
@@ -247,15 +297,51 @@ class DefaultAgentManager:
             content=accepted,
             origin=source,
             received_at=self._deps.clock.now(),
+            priority=self._deps.config.section(InboxConfig).priority_of(source.source.type),
         )
         await self._deps.memory.enqueue_inbox(item)
+        if source.source.type is AddressType.AGENT:
+            rt.waiting_agent_messages += 1
+            self._deps.bus.publish(agent_id, AgentUpdated(agent=self.get(agent_id)))
         if not self._runs.wakes(source):
-            return
+            return True
         async with rt.lock:
             if rt.status is _S.ERROR:
                 await self._runs.halt(rt, RunStopReason.ERROR, None)
             if rt.status in (_S.IDLE, _S.ERROR):
                 await self._runs.start_run(rt, RunStart(accepted, source))
+        return True
+
+    # --- waking on what is in the database (phase 2, 02 §5a) ---
+
+    async def wake_pending(self) -> None:
+        """Open a run for every idle agent that has inbox messages waiting.
+
+        The safety net behind ``send``: whatever reached the ``inbox`` table without the
+        in-process wake (a crash in between, another process) is still picked up.
+        """
+        for agent_id in await self._deps.memory.agents_with_inbox():
+            rt = self._runtimes.get(agent_id)
+            if rt is not None and rt.status is _S.IDLE and rt.task is None:
+                await self._runs.continue_from_inbox(rt)
+
+    async def _watch_inbox(self) -> None:
+        memory = self._deps.memory
+        seen = await memory.data_version()
+        while True:
+            await asyncio.sleep(self._deps.config.section(InboxConfig).poll_interval_s)
+            try:
+                version = await memory.data_version()
+                if version != seen:
+                    seen = version
+                    await self.wake_pending()
+            except HarnessError as error:  # the next round tries again
+                logger.warning("checking the inbox table failed: {}", error.message)
+
+    def watch_inbox(self) -> None:
+        """Start checking ``PRAGMA data_version`` every ``inbox.poll_interval_s`` seconds."""
+        if self._watcher is None:
+            self._watcher = asyncio.create_task(self._watch_inbox(), name=INBOX_WATCH_TASK_NAME)
 
     async def stop(self, agent_id: AgentId) -> None:
         """Cancel the current run at once; what was streamed so far is kept."""
@@ -301,6 +387,11 @@ class DefaultAgentManager:
 
     async def shutdown(self, *, stop_agents: bool) -> None:
         """Stop every task; with ``stop_agents`` runs are closed, otherwise they resume later."""
+        watcher, self._watcher = self._watcher, None
+        if watcher is not None:
+            watcher.cancel()
+            with suppress(asyncio.CancelledError):
+                await watcher
         for rt in list(self._runtimes.values()):
             if stop_agents and rt.status in state.ACTIVE:
                 async with rt.lock:

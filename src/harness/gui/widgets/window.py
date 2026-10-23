@@ -1,6 +1,7 @@
 # pyright: basic
 """The main window: polls the core's events and turns clicks into commands (02 §3)."""
 
+import gc
 from pathlib import Path
 from tkinter import messagebox
 
@@ -35,6 +36,7 @@ class MainWindow(ctk.CTk):
         self._state = AppState()
         self._show_archived = False
         self._closing = False
+        self._ticks = 0
         info = bridge.info()
         self._theme_key: tuple[str, str, int] | None = None
         self._theme = self._load_theme()
@@ -148,7 +150,14 @@ class MainWindow(ctk.CTk):
             self._refresh(self._state.take_changes())
         except Exception:  # one bad frame must not kill the window
             logger.exception("GUI tick failed")
+        self._collect_garbage()
         self.after(consts.POLL_INTERVAL_MS, self._tick)
+
+    def _collect_garbage(self) -> None:
+        """Free cycles on the Tk thread (``run_gui`` turns the automatic collector off)."""
+        self._ticks += 1
+        full = self._ticks % consts.GC_FULL_EVERY_TICKS == 0
+        gc.collect(consts.GC_FULL_GENERATION if full else consts.GC_YOUNG_GENERATION)
 
     def _refresh(self, changed: set[Region]) -> None:
         state = self._state

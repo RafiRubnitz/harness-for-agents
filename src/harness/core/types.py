@@ -71,6 +71,11 @@ class MessageOrigin(BaseModel):
     conversation_id: str | None = None
     hop: int = 0
     reply_to: MessageId | None = None
+    message_id: str | None = None
+    """The id the sender got back for this message; what a reply refers to."""
+    expects_reply: bool = False
+    source_name: str | None = None
+    """The sender's name when the message was sent (the id in ``source`` never changes)."""
 
 
 class Source(BaseModel):

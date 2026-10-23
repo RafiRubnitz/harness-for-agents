@@ -1,5 +1,7 @@
 """Desktop GUI (CustomTkinter). Talks to the core only through ``harness.core``."""
 
+import gc
+
 from harness.core.errors import CoreLockedError
 from harness.core.handle import CoreLauncher
 from harness.gui import consts
@@ -43,8 +45,13 @@ def run_gui(launcher: CoreLauncher) -> int:
         _alert(consts.TITLE, consts.MSG_START_FAILED.format(detail=error))
         return consts.EXIT_CORE_LOCKED
     window = MainWindow(bridge)
+    # A Tk object freed by the collector on another thread calls into Tcl and waits for this
+    # loop; if this thread is waiting on that one (the log queue), both hang. The window
+    # collects on its own tick instead.
+    gc.disable()
     try:
         window.mainloop()  # pyright: ignore[reportUnknownMemberType]
     finally:
+        gc.enable()
         bridge.stop()
     return consts.EXIT_OK

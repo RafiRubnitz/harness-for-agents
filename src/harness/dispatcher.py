@@ -139,6 +139,7 @@ class CommandDispatcher:
         if command.template is None:
             spec = AgentSpec(
                 name=command.agent_name,
+                description=command.description,
                 model=command.model,
                 system_prompt=command.system_prompt,
                 tools=command.tools,

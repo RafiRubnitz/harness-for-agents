@@ -44,6 +44,7 @@ from harness.core.events import (
 from harness.core.events import Warning as WarningEvent
 from harness.core.handle import CoreHandle
 from harness.core.records import AgentState, PermissionRequestPayload
+from harness.core.utils.names import free_name
 from harness.core.utils.slash import parse_input
 
 
@@ -90,8 +91,12 @@ class ChatSession:
 
     async def _create(self, options: ChatOptions) -> AgentState:
         # The model stays unset unless given, so a template's own model is kept.
+        name = options.agent
+        if name is None:  # names are unique: chat, chat-2, ...
+            taken = {agent.name for agent in await self.list_agents(include_archived=True)}
+            name = free_name(consts.DEFAULT_AGENT_NAME, taken)
         fields: dict[str, str | list[str] | None] = {
-            "agent_name": options.agent or consts.DEFAULT_AGENT_NAME,
+            "agent_name": name,
             "template": options.template,
         }
         if options.template is None:

@@ -45,7 +45,8 @@ class AgentRow(Base):
     __tablename__ = "agents"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
-    name: Mapped[str]
+    name: Mapped[str] = mapped_column(index=True, unique=True)
+    description: Mapped[str] = mapped_column(Text, default="")
     model: Mapped[str]
     system_prompt: Mapped[str] = mapped_column(Text)
     tools: Mapped[list[Any]]
@@ -79,13 +80,14 @@ class InboxRow(Base):
     """``inbox``: received messages that have no seq yet."""
 
     __tablename__ = "inbox"
-    __table_args__ = (Index(None, "agent_id", "received_at"),)
+    __table_args__ = (Index(None, "agent_id", "priority", "received_at"),)
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
     agent_id: Mapped[str] = mapped_column(ForeignKey("agents.id", ondelete=_CASCADE))
     content: Mapped[list[Any]]
     origin: Mapped[dict[str, Any]]
     received_at: Mapped[datetime]
+    priority: Mapped[int] = mapped_column(default=0)
 
 
 class MessageRow(Base):
@@ -118,6 +120,9 @@ class MessageRow(Base):
     conversation_id: Mapped[str | None]
     hop: Mapped[int | None]
     reply_to: Mapped[str | None]
+    origin_message_id: Mapped[str | None] = mapped_column(index=True)
+    origin_source_name: Mapped[str | None]
+    expects_reply: Mapped[bool | None]
     usage: Mapped[dict[str, Any] | None]
     cost_usd: Mapped[float | None] = mapped_column(Float)
     stop_reason: Mapped[str | None]

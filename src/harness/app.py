@@ -1,5 +1,6 @@
 """Composition root: the only module that wires the components together."""
 
+import secrets
 import sys
 from collections.abc import AsyncGenerator, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
@@ -8,12 +9,19 @@ from importlib import metadata
 
 from loguru import logger
 
-from harness.agents import AgentDeps, AgentManager, DefaultAgentManager, EventBus
+from harness.agents import (
+    AgentDeps,
+    AgentManager,
+    DefaultAgentManager,
+    EventBus,
+    MessagingService,
+)
 from harness.cli import run
 from harness.config import (
     ConfigIssue,
     ConfigWatcher,
     FileConfigManager,
+    LocalServerConfig,
     LoggingConfig,
     requires_restart,
 )
@@ -26,7 +34,12 @@ from harness.core.consts import (
     ErrorCode,
     HookEvent,
 )
-from harness.core.errors import AgentNotFoundError, HarnessError, MemoryStoreError
+from harness.core.errors import (
+    AgentNotFoundError,
+    HarnessError,
+    MemoryStoreError,
+    SecretMissingError,
+)
 from harness.core.events import (
     ConfigChanged,
     ConfigErrorRaised,
@@ -41,6 +54,7 @@ from harness.core.handle import CoreHandle
 from harness.core.hook_types import HookInput, HookRunRecord, HookSpec
 from harness.core.lock import CoreLock
 from harness.core.logging import setup_logging
+from harness.core.messaging import AgentInfo, Messenger, SendMessageInput, SendMessageOutput
 from harness.core.records import (
     AgentState,
     BackgroundTaskRecord,
@@ -63,6 +77,8 @@ from harness.core.utils.time import SystemClock, elapsed_ms
 from harness.dispatcher import CommandDispatcher, CoreParts
 from harness.gui import run_gui
 from harness.hooks import DefaultHooksManager, HooksDeps, HooksManager
+from harness.local_server import LocalServer, create_app
+from harness.local_server import consts as local_server
 from harness.memory import (
     Embedder,
     LedgerCallSink,
@@ -120,6 +136,51 @@ class _AgentDirectory:
         if self.agents is None:
             raise AgentNotFoundError(MSG_CORE_NOT_READY)
         return self.agents.get(agent_id)
+
+
+class _Messenger:
+    """Lets the tools reach the messaging service, which is built after them."""
+
+    def __init__(self) -> None:
+        self.service: Messenger | None = None
+
+    def _ready(self) -> Messenger:
+        if self.service is None:
+            raise AgentNotFoundError(MSG_CORE_NOT_READY)
+        return self.service
+
+    def list_agents(self, viewer: Address) -> list[AgentInfo]:
+        return self._ready().list_agents(viewer)
+
+    async def send(self, sender: Address, message: SendMessageInput) -> SendMessageOutput:
+        return await self._ready().send(sender, message)
+
+    async def reply(self, sender: AgentId, message_id: str, content: str) -> SendMessageOutput:
+        return await self._ready().reply(sender, message_id, content)
+
+
+async def _local_server(
+    stack: AsyncExitStack, config: FileConfigManager, messenger: Messenger
+) -> None:
+    """Start the HTTP entry point on 127.0.0.1 when ``local_server.enabled`` is on.
+
+    The token is made on first use and kept in the keyring (02 §5a).
+    """
+    settings = config.section(LocalServerConfig)
+    if not settings.enabled:
+        return
+    try:
+        token = config.secret(local_server.TOKEN_SECRET)
+    except SecretMissingError:
+        token = secrets.token_urlsafe(local_server.TOKEN_BYTES)
+        await config.set_secret(local_server.TOKEN_SECRET, token)
+    server = LocalServer(create_app(messenger, token), settings.port)
+    try:
+        await server.start()
+    except HarnessError as error:  # a busy port must not keep the harness from starting
+        logger.error("{}", error.message)
+        return
+    stack.push_async_callback(server.stop)
 
 
 class _ContextNotices:
@@ -254,6 +315,7 @@ class _Edges:
     directory: _AgentDirectory
     semantic: Semantic
     stack: AsyncExitStack
+    messenger: Messenger
 
 
 def _tools(options: CoreOptions, edges: _Edges) -> ToolsManager:
@@ -302,6 +364,7 @@ def _tools(options: CoreOptions, edges: _Edges) -> ToolsManager:
             history=edges.memory.store,
             task_status=task_status,
             task_done=task_done,
+            messenger=edges.messenger,
         )
     )
     edges.stack.push_async_callback(tools.close)
@@ -376,9 +439,22 @@ async def open_core(options: CoreOptions | None = None) -> AsyncGenerator[CoreHa
                 embedder=options.embedder,
             )
             stack.push_async_callback(semantic.close)
+            messenger = _Messenger()
             tools = _tools(
                 options,
-                _Edges(config, hooks, memory, clock, ids, home, bus, directory, semantic, stack),
+                _Edges(
+                    config,
+                    hooks,
+                    memory,
+                    clock,
+                    ids,
+                    home,
+                    bus,
+                    directory,
+                    semantic,
+                    stack,
+                    messenger,
+                ),
             )
             await tools.reload()  # custom tool files and MCP servers
             context = DefaultContextManager(
@@ -409,7 +485,12 @@ async def open_core(options: CoreOptions | None = None) -> AsyncGenerator[CoreHa
             )
             agents = DefaultAgentManager(deps)
             directory.agents = agents
+            messenger.service = MessagingService(
+                agents, memory=memory.store, config=config, clock=clock, ids=ids, bus=bus
+            )
             await agents.start()
+            agents.watch_inbox()
+            await _local_server(stack, config, messenger)
             semantic.start()
             try:
                 yield CommandDispatcher(

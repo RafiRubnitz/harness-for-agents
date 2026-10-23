@@ -26,6 +26,7 @@ class AgentForm:
     name: str
     model: str
     system_prompt: str = ""
+    description: str = ""
     tools: list[str] = field(default_factory=list[str])
     template: str | None = None
     working_dir: str = ""
@@ -56,6 +57,8 @@ def build_create(form: AgentForm) -> AgentCreate:
     if not name:
         raise FormError(consts.MSG_NAME_REQUIRED)
     fields: dict[str, JsonValue] = {"agent_name": name}
+    if form.description.strip():
+        fields["description"] = form.description.strip()
     settings = _settings(form, AgentSettings())
     if settings != AgentSettings():
         fields["settings"] = settings.model_dump(mode="json")
@@ -83,6 +86,8 @@ def build_update(agent: AgentState, form: AgentForm) -> AgentUpdate | None:
     changes: dict[str, JsonValue] = {}
     if name != agent.name:
         changes["name"] = name
+    if form.description.strip() != agent.description:
+        changes["description"] = form.description.strip()
     if form.model != agent.model:
         changes["model"] = form.model
     if form.system_prompt.strip():

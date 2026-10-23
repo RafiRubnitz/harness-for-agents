@@ -397,3 +397,122 @@ async def test_meta_roundtrip(store: MemoryStore) -> None:
     await store.set_meta("key", "v2")
 
     assert await store.get_meta("key") == "v2"
+
+
+# --- phase 2, 03: inbox priority, received messages, waking from the database ---
+
+AGENT_ORIGIN = MessageOrigin(
+    source=Address(type=AddressType.AGENT, id=OTHER_AGENT_ID),
+    conversation_id="conv_1",
+    hop=1,
+    message_id="msg_sent_1",
+    expects_reply=True,
+    source_name="sender",
+)
+LOW, HIGH = 10, 50
+AGING_S = 60.0
+
+
+def _ranked(item_id: str, priority: int, clock: FakeClock) -> InboxItem:
+    return _inbox(item_id, item_id, clock).model_copy(update={"priority": priority})
+
+
+async def test_inbox_is_handled_by_priority_then_by_arrival(
+    store: MemoryStore, clock: FakeClock
+) -> None:
+    await store.save_agent(make_agent())
+    await store.save_run(_run(clock))
+    arrivals = [("low_1", LOW), ("high_1", HIGH), ("low_2", LOW), ("high_2", HIGH)]
+    for item_id, priority in arrivals:
+        await store.enqueue_inbox(_ranked(item_id, priority, clock))
+        clock.advance(1)
+
+    pending = await store.pending_inbox(AGENT_ID)
+    injected = await store.inject_inbox(AGENT_ID, RUN_ID)
+
+    expected = ["high_1", "high_2", "low_1", "low_2"]
+    assert [item.id for item in pending] == expected
+    assert [m.content for m in injected] == [[TextBlock(text=item_id)] for item_id in expected]
+
+
+async def test_a_message_that_waited_long_enough_overtakes_newer_ones(
+    store: MemoryStore, clock: FakeClock
+) -> None:
+    await store.save_agent(make_agent())
+    await store.enqueue_inbox(_ranked("old_low", LOW, clock))
+    waited = AGING_S * (HIGH - LOW)  # far more periods than the gap can need
+    clock.advance(waited)
+    await store.enqueue_inbox(_ranked("new_high", HIGH, clock))
+
+    without_aging = await store.pending_inbox(AGENT_ID)
+    with_aging = await store.pending_inbox(AGENT_ID, aging_s=AGING_S)
+
+    assert [item.id for item in without_aging] == ["new_high", "old_low"]
+    assert [item.id for item in with_aging] == ["old_low", "new_high"]
+
+
+async def test_agents_with_waiting_messages_are_listed(
+    store: MemoryStore, clock: FakeClock
+) -> None:
+    await store.save_agent(make_agent())
+    await store.save_agent(make_agent(OTHER_AGENT_ID))
+    await store.save_run(_run(clock))
+    before = await store.agents_with_inbox()
+
+    await store.enqueue_inbox(_inbox("inb_1", "waiting", clock))
+    waiting = await store.agents_with_inbox()
+    await store.inject_inbox(AGENT_ID, RUN_ID)
+
+    assert list(before) == []
+    assert list(waiting) == [AGENT_ID]
+    assert list(await store.agents_with_inbox()) == []
+
+
+async def test_a_received_message_is_found_by_the_id_its_sender_gave_it(
+    store: MemoryStore, clock: FakeClock
+) -> None:
+    await store.save_agent(make_agent())
+    await store.save_agent(make_agent(OTHER_AGENT_ID))
+    await store.save_run(_run(clock))
+    item = _inbox("inb_1", "from a colleague", clock).model_copy(update={"origin": AGENT_ORIGIN})
+    await store.enqueue_inbox(item)
+    (injected,) = await store.inject_inbox(AGENT_ID, RUN_ID)
+
+    found = await store.received_message(AGENT_ID, str(AGENT_ORIGIN.message_id))
+
+    assert found == injected
+    assert injected.origin == AGENT_ORIGIN  # name, message id and expects_reply survive
+    assert await store.received_message(OTHER_AGENT_ID, str(AGENT_ORIGIN.message_id)) is None
+    assert await store.received_message(AGENT_ID, "msg_unknown") is None
+
+
+async def test_last_received_is_the_newest_message_that_came_in(
+    store: MemoryStore, clock: FakeClock
+) -> None:
+    await store.save_agent(make_agent())
+    nothing_yet = await store.last_received(AGENT_ID)
+    first = make_message("msg_1", role=MessageRole.USER).model_copy(update={"origin": ORIGIN})
+    second = make_message("msg_3", role=MessageRole.USER).model_copy(
+        update={"origin": AGENT_ORIGIN}
+    )
+
+    await store.append_message(first)
+    await store.append_message(make_message("msg_2"))
+    newest = await store.append_message(second)
+    await store.append_message(make_message("msg_4"))
+
+    assert nothing_yet is None
+    assert await store.last_received(AGENT_ID) == newest
+
+
+async def test_the_data_version_moves_when_another_connection_writes(
+    store: MemoryStore, clock: FakeClock
+) -> None:
+    await store.save_agent(make_agent())
+    before = await store.data_version()
+    unchanged = await store.data_version()
+
+    await store.enqueue_inbox(_inbox("inb_1", "written", clock))
+
+    assert unchanged == before
+    assert await store.data_version() != before

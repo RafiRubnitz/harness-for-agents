@@ -8,8 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from harness.core.consts import ID_PREFIX_MESSAGE, ApprovalStatus, MessageRole, TaskStatus
 from harness.core.errors import AgentNotFoundError, MemoryStoreError
-from harness.core.records import AgentRecord, InboxItem, MessageRecord
+from harness.core.records import AgentRecord, MessageRecord
 from harness.core.types import AgentId, IdGenerator, RunId
+from harness.core.utils.inbox import in_order
 from harness.memory import hebrew
 from harness.memory.consts import (
     MSG_AGENT_NOT_FOUND,
@@ -131,13 +132,43 @@ async def search_history(
 
 
 async def pending_inbox(session: AsyncSession, agent_id: AgentId) -> list[InboxRow]:
-    """Return the agent's inbox in arrival order."""
+    """Return the agent's inbox: higher priority first, arrival order inside a priority."""
     query = (
         select(InboxRow)
         .where(InboxRow.agent_id == agent_id)
-        .order_by(InboxRow.received_at, InboxRow.id)
+        .order_by(InboxRow.priority.desc(), InboxRow.received_at, InboxRow.id)
     )
     return list((await session.scalars(query)).all())
+
+
+async def agents_with_inbox(session: AsyncSession) -> list[str]:
+    """Return the ids of the agents that have something in their inbox."""
+    query = select(InboxRow.agent_id).distinct().order_by(InboxRow.agent_id)
+    return list((await session.scalars(query)).all())
+
+
+async def message_by_origin_id(
+    session: AsyncSession, agent_id: AgentId, message_id: str
+) -> MessageRow | None:
+    """Return the message an agent received under the sender's ``message_id``."""
+    query = (
+        select(MessageRow)
+        .where(MessageRow.agent_id == agent_id, MessageRow.origin_message_id == message_id)
+        .order_by(MessageRow.seq.desc())
+        .limit(1)
+    )
+    return (await session.scalars(query)).first()
+
+
+async def last_received(session: AsyncSession, agent_id: AgentId) -> MessageRow | None:
+    """Return the newest message of the agent that came with an origin."""
+    query = (
+        select(MessageRow)
+        .where(MessageRow.agent_id == agent_id, MessageRow.origin_source_type.is_not(None))
+        .order_by(MessageRow.seq.desc())
+        .limit(1)
+    )
+    return (await session.scalars(query)).first()
 
 
 async def inject_inbox(
@@ -148,11 +179,14 @@ async def inject_inbox(
     step: int | None,
     ids: IdGenerator,
     now: datetime,
+    aging_s: float | None = None,
 ) -> list[MessageRecord]:
     """Turn every inbox item into a ``user`` message with the next seq, and empty the inbox."""
     injected: list[MessageRecord] = []
-    for row in await pending_inbox(session, agent_id):
-        item: InboxItem = convert.inbox_item(row)
+    rows = {row.id: row for row in await pending_inbox(session, agent_id)}
+    items = [convert.inbox_item(row) for row in rows.values()]
+    for item in in_order(items, now, aging_s):
+        row = rows[item.id]
         record = MessageRecord.model_validate(
             {
                 "id": ids.new(ID_PREFIX_MESSAGE),

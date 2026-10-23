@@ -63,7 +63,7 @@ def make_agent(
     """A minimal agent record."""
     return AgentRecord(
         id=agent_id,
-        name=AGENT_NAME,
+        name=AGENT_NAME if agent_id == AGENT_ID else f"{AGENT_NAME}-{agent_id}",
         model=TEST_MODEL_ALIAS,
         system_prompt="",
         tools=[],

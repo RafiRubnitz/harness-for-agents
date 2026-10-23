@@ -46,6 +46,28 @@ def _text_at(payload: dict[str, JsonValue], path: list[str]) -> str | None:
     return value if isinstance(value, str) else None
 
 
+def _source_addresses(payload: dict[str, JsonValue]) -> list[str]:
+    """The sender of a message, by id and (when known) by name."""
+    origin = [consts.PAYLOAD_ORIGIN]
+    kind = _text_at(payload, [*origin, consts.PAYLOAD_SOURCE, consts.PAYLOAD_TYPE])
+    if kind is None:
+        return []
+    names = [
+        _text_at(payload, [*origin, consts.PAYLOAD_SOURCE, consts.PAYLOAD_ID]),
+        _text_at(payload, [*origin, consts.PAYLOAD_SOURCE_NAME]),
+    ]
+    return [consts.ADDRESS.format(type=kind, id=name) for name in names if name]
+
+
+def _target_addresses(inp: HookInput) -> list[str]:
+    names = [inp.agent_name, inp.agent_id]
+    return [consts.ADDRESS.format(type=consts.TARGET_TYPE, id=name) for name in names if name]
+
+
+def _any_fits(addresses: list[str], pattern: str) -> bool:
+    return any(fnmatchcase(address, pattern) for address in addresses)
+
+
 def matches(spec: HookSpec, inp: HookInput, template: str | None) -> bool:
     """Whether every key of the hook's ``match`` fits this event (05 §6)."""
     for key, pattern in spec.match.items():
@@ -62,6 +84,10 @@ def matches(spec: HookSpec, inp: HookInput, template: str | None) -> bool:
         elif key == consts.MATCH_SOURCE_TYPE:
             where = [consts.PAYLOAD_ORIGIN, consts.PAYLOAD_SOURCE, consts.PAYLOAD_TYPE]
             fits = _text_at(inp.payload, where) == pattern
+        elif key == consts.MATCH_SOURCE:
+            fits = _any_fits(_source_addresses(inp.payload), pattern)
+        elif key == consts.MATCH_TARGET:
+            fits = _any_fits(_target_addresses(inp), pattern)
         else:
             fits = False
         if not fits:

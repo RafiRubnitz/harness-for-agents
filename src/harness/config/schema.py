@@ -1,6 +1,6 @@
 """The config schema: every key any component reads, with defaults and validation."""
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 
 from harness.config.consts import (
     AUTO_RETRIEVE_K_DEFAULT,
@@ -23,8 +23,15 @@ from harness.config.consts import (
     HOOK_ASYNC_TIMEOUT_MS_DEFAULT,
     HOOK_RUNNERS_DEFAULT,
     HOOK_TIMEOUT_MS_DEFAULT,
+    INBOX_AGING_S_DEFAULT,
+    INBOX_POLL_INTERVAL_S_DEFAULT,
+    INBOX_PRIORITIES_DEFAULT,
+    LOCAL_SERVER_PORT_DEFAULT,
     MEMORIES_PCT_DEFAULT,
     MEMORY_SEARCH_K_DEFAULT,
+    MESSAGING_MAX_AGENT_HOPS_DEFAULT,
+    MESSAGING_MAX_PER_CONVERSATION_DEFAULT,
+    MESSAGING_MAX_PER_HOUR_DEFAULT,
     MODEL_ALIAS_CHEAP,
     MODEL_ALIAS_DEEPSEEK,
     MODEL_ALIAS_DEEPSEEK_REASONER,
@@ -41,6 +48,8 @@ from harness.config.consts import (
     MODEL_ID_MAIN,
     MODEL_RETRIES_DEFAULT,
     MODEL_TIMEOUT_MS_DEFAULT,
+    MSG_PRIORITY_RANGE,
+    MSG_PRIORITY_USER,
     RECENCY_WEIGHT_DEFAULT,
     RESERVE_MIN_TOKENS_DEFAULT,
     RESERVE_PCT_DEFAULT,
@@ -59,7 +68,10 @@ from harness.config.consts import (
     WEB_PROVIDER_DEFAULT,
 )
 from harness.core.consts import (
+    ADDRESS_ANY,
     LOG_LEVEL_DEFAULT,
+    USER_PRIORITY,
+    AddressType,
     ConfigLayer,
     Decision,
     ErrorCode,
@@ -293,6 +305,58 @@ class LoggingConfig(_Section):
     level: str = LOG_LEVEL_DEFAULT
 
 
+class MessagingConfig(_Section):
+    """``messaging``: who may write to an agent, and how much (phase 2, 03 §5-§7).
+
+    ``allow_from`` / ``deny_from`` hold addresses (``agent:coder``, ``agent:*``, ``api:*``)
+    or ``*``; a match in ``deny_from`` wins.
+    """
+
+    discoverable: bool = True
+    allow_from: list[str] = [ADDRESS_ANY]
+    deny_from: list[str] = []
+    max_per_hour: int = Field(default=MESSAGING_MAX_PER_HOUR_DEFAULT, gt=0)
+    max_messages_per_conversation: int = Field(default=MESSAGING_MAX_PER_CONVERSATION_DEFAULT, gt=0)
+    max_agent_hops: int = Field(default=MESSAGING_MAX_AGENT_HOPS_DEFAULT, gt=0)
+
+
+class InboxConfig(_Section):
+    """``inbox``: the order waiting messages are handled in (phase 2, 03 §7a).
+
+    ``priorities`` maps a source type to its priority; the user is always the highest.
+    ``aging_s=0`` turns aging off.
+    """
+
+    priorities: dict[str, int] = dict(INBOX_PRIORITIES_DEFAULT)
+    aging_s: float = Field(default=INBOX_AGING_S_DEFAULT, ge=0)
+    poll_interval_s: float = Field(default=INBOX_POLL_INTERVAL_S_DEFAULT, gt=0)
+
+    @field_validator("priorities")
+    @classmethod
+    def _below_the_user(cls, priorities: dict[str, int]) -> dict[str, int]:
+        for source, priority in priorities.items():
+            if source == AddressType.USER.value:
+                raise ValueError(MSG_PRIORITY_USER)
+            if not 0 <= priority < USER_PRIORITY:
+                raise ValueError(
+                    MSG_PRIORITY_RANGE.format(source=source, highest=USER_PRIORITY - 1)
+                )
+        return priorities
+
+    def priority_of(self, source: AddressType) -> int:
+        """Return the priority of a message that came from ``source``."""
+        if source is AddressType.USER:
+            return USER_PRIORITY
+        return self.priorities.get(source.value, INBOX_PRIORITIES_DEFAULT.get(source.value, 0))
+
+
+class LocalServerConfig(_Section):
+    """``local_server``: the HTTP entry point on 127.0.0.1 (phase 2, 02 §5a); off by default."""
+
+    enabled: bool = False
+    port: int = Field(default=LOCAL_SERVER_PORT_DEFAULT, gt=0)
+
+
 def _default_providers() -> dict[str, ProviderConfig]:
     def secret(name: str) -> str:
         return f"${{{SECRET_REF_PREFIX}{name}}}"
@@ -343,6 +407,9 @@ class HarnessConfig(_Section):
     web: WebConfig = WebConfig()
     projects: ProjectsConfig = ProjectsConfig()
     logging: LoggingConfig = LoggingConfig()
+    messaging: MessagingConfig = MessagingConfig()
+    inbox: InboxConfig = InboxConfig()
+    local_server: LocalServerConfig = LocalServerConfig()
 
 
 class ResolvedValue(BaseModel):
@@ -403,4 +470,7 @@ SECTION_KEYS: dict[type[BaseModel], tuple[str, ...]] = {
     WebConfig: ("web",),
     ProjectsConfig: ("projects",),
     LoggingConfig: ("logging",),
+    MessagingConfig: ("messaging",),
+    InboxConfig: ("inbox",),
+    LocalServerConfig: ("local_server",),
 }

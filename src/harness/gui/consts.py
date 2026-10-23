@@ -6,6 +6,9 @@ from typing import Final
 from harness.core.consts import AgentStatus
 
 POLL_INTERVAL_MS: Final = 50
+GC_YOUNG_GENERATION: Final = 1
+GC_FULL_GENERATION: Final = 2
+GC_FULL_EVERY_TICKS: Final = 600
 MAX_EVENTS_PER_TICK: Final = 400
 RESIZE_DEBOUNCE_MS: Final = 150
 BRIDGE_START_TIMEOUT_S: Final = 60.0
@@ -47,6 +50,7 @@ TABLE_SEPARATOR: Final = " │ "
 THINKING_LABEL: Final = "thinking"
 STATUS_DOT: Final = "●"
 ORIGIN_LABEL: Final = "[{source}] "
+AGENT_ORIGIN_LABEL: Final = "🤖 מ-{name} "
 SEPARATOR: Final = " · "
 
 
@@ -141,6 +145,7 @@ LABEL_APPROVE_ONCE: Final = "approve once"
 LABEL_APPROVE_ALWAYS: Final = "always for this agent"
 LABEL_DENY: Final = "deny"
 LABEL_NAME: Final = "name"
+LABEL_DESCRIPTION: Final = "description (what other agents see)"
 LABEL_MODEL: Final = "model"
 LABEL_TEMPLATE: Final = "template"
 LABEL_NO_TEMPLATE: Final = "(none)"

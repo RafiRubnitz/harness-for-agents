@@ -151,7 +151,9 @@ def add_user(conversation: Conversation, message: MessageRecord) -> None:
     """Show a received message; tool results inside it close their tool rows."""
     origin = message.origin
     label = None
-    if origin is not None and origin.source.type is not AddressType.USER:
+    if origin is not None and origin.source.type is AddressType.AGENT:
+        label = consts.AGENT_ORIGIN_LABEL.format(name=origin.source_name or origin.source.id)
+    elif origin is not None and origin.source.type is not AddressType.USER:
         label = consts.ORIGIN_LABEL.format(source=origin.source.type.value)
     text = blocks_text(message.content)
     if text:

@@ -1,5 +1,6 @@
 """The Alembic migrations and the engine (13 §5.6)."""
 
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -128,3 +129,57 @@ async def test_agent_delete_cascade_keeps_other_agents(memory: Memory) -> None:
     assert await store.get_messages(AGENT_ID) == []
     assert await store.get_messages(OTHER_AGENT_ID) == [kept]
     assert [a.id for a in await store.list_agents()] == [OTHER_AGENT_ID]
+
+
+INITIAL_REVISION = "0001"
+SHARED_NAME = "coder"
+OLD_AGENT_SQL = (
+    "INSERT INTO agents (id, name, model, system_prompt, tools, status, settings, "
+    "config_overrides, pending_hook_context, last_seq, created_at, updated_at) "
+    "VALUES (?, ?, 'main', '', '[]', 'idle', '{}', '{}', '[]', 0, ?, ?)"
+)
+OLD_AGENTS = [
+    ("agt_a", SHARED_NAME, "2026-01-01 10:00:00.000000"),
+    ("agt_b", SHARED_NAME, "2026-01-02 10:00:00.000000"),
+    ("agt_c", SHARED_NAME, "2026-01-03 10:00:00.000000"),
+    ("agt_d", "writer", "2026-01-04 10:00:00.000000"),
+]
+
+
+def _names(path: Path) -> dict[str, str]:
+    with sqlite3.connect(path) as connection:
+        return dict(connection.execute("SELECT id, name FROM agents").fetchall())
+
+
+async def test_agents_that_shared_a_name_get_unique_ones(tmp_path: Path) -> None:
+    path = tmp_path / "old.db"
+    await upgrade(path, INITIAL_REVISION)
+    with sqlite3.connect(path) as connection:
+        connection.executemany(
+            OLD_AGENT_SQL, [(agent_id, name, at, at) for agent_id, name, at in OLD_AGENTS]
+        )
+
+    await upgrade(path)
+    names = _names(path)
+
+    assert names["agt_a"] == SHARED_NAME  # the oldest keeps the name
+    assert names["agt_d"] == "writer"
+    assert len(set(names.values())) == len(OLD_AGENTS)
+    assert all(name.startswith(SHARED_NAME) for name in names.values() if name != "writer")
+    with pytest.raises(sqlite3.IntegrityError), sqlite3.connect(path) as connection:
+        connection.execute("UPDATE agents SET name = ? WHERE id = 'agt_d'", (SHARED_NAME,))
+
+
+async def test_the_messaging_revision_can_be_taken_back(tmp_path: Path) -> None:
+    path = tmp_path / "back.db"
+    await upgrade(path)
+
+    await downgrade(path, INITIAL_REVISION)
+    with sqlite3.connect(path) as connection:
+        agent_columns = {row[1] for row in connection.execute("PRAGMA table_info(agents)")}
+        inbox_columns = {row[1] for row in connection.execute("PRAGMA table_info(inbox)")}
+    await upgrade(path)
+
+    assert "description" not in agent_columns
+    assert "priority" not in inbox_columns
+    assert await current_revision(path) == head_revision()

@@ -5,6 +5,7 @@ from datetime import datetime
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
 from harness.agents.consts import (
+    FIELD_DESCRIPTION,
     FIELD_NAME,
     FIELD_SETTINGS,
     FIELD_TEMPLATE,
@@ -64,6 +65,7 @@ def new_record(
     return AgentRecord(
         id=agent_id,
         name=spec.name,
+        description=spec.description,
         model=spec.model,
         system_prompt=spec.system_prompt,
         tools=list(spec.tools),
@@ -93,6 +95,7 @@ def spec_from_template(
     settings = {**template.settings, **(extra if isinstance(extra, dict) else {})}
     data: dict[str, JsonValue] = {
         FIELD_NAME: template.name,
+        FIELD_DESCRIPTION: template.description,
         "model": template.model,
         "system_prompt": template.system_prompt,
         "tools": list(template.tools),
@@ -139,6 +142,7 @@ def agent_state(rt: AgentRuntime, pending_approvals: int, background_tasks: int)
     return AgentState(
         id=record.id,
         name=record.name,
+        description=record.description,
         model=record.model,
         template=record.template,
         status=record.status,
@@ -151,6 +155,7 @@ def agent_state(rt: AgentRuntime, pending_approvals: int, background_tasks: int)
         cost_usd_total=rt.cost_total,
         context_tokens=rt.context_tokens,
         recovered=rt.recovered,
+        waiting_agent_messages=rt.waiting_agent_messages,
         created_at=record.created_at,
         updated_at=record.updated_at,
     )

@@ -71,6 +71,7 @@ class AgentSpec(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     name: str
+    description: str = ""
     model: str = DEFAULT_MODEL_ALIAS
     system_prompt: str = ""
     tools: list[str] = []
@@ -96,6 +97,9 @@ class AgentState(BaseModel):
     cost_usd_total: float
     context_tokens: int | None
     recovered: bool = False
+    description: str = ""
+    waiting_agent_messages: int = 0
+    """Messages from other agents that sit in the inbox and were not read yet."""
     created_at: datetime
     updated_at: datetime
 
@@ -105,6 +109,7 @@ class AgentRecord(BaseModel):
 
     id: AgentId
     name: str
+    description: str = ""
     model: str
     system_prompt: str
     tools: list[str]
@@ -145,6 +150,8 @@ class InboxItem(BaseModel):
     content: list[ContentBlock]
     origin: MessageOrigin
     received_at: datetime
+    priority: int = 0
+    """Set by the core from the source type, never from the content (phase2-03 §7a)."""
 
 
 class RunRecord(BaseModel):

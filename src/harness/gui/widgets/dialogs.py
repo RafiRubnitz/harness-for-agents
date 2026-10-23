@@ -113,6 +113,7 @@ class AgentDialog(_Dialog):
         self._on_submit, self._agent, self._theme = on_submit, agent, theme
         settings = agent.settings if agent is not None else None
         self._name = _entry(self, theme)
+        self._description = _entry(self, theme)
         self._info = info
         self._model = tk.StringVar(value=agent.model if agent else info.models[0])
         self._provider = tk.StringVar(value=provider_of(info, self._model.get()))
@@ -128,7 +129,10 @@ class AgentDialog(_Dialog):
         self._error = _label(self, theme, "")
         self._error.configure(text_color=theme.color("error"))
 
-        rows: list[tuple[str, tk.Widget]] = [(consts.LABEL_NAME, self._name)]
+        rows: list[tuple[str, tk.Widget]] = [
+            (consts.LABEL_NAME, self._name),
+            (consts.LABEL_DESCRIPTION, self._description),
+        ]
         if agent is None:
             templates = [consts.LABEL_NO_TEMPLATE, *info.templates]
             rows.append((consts.LABEL_TEMPLATE, _menu(self, theme, templates, self._template)))
@@ -155,6 +159,7 @@ class AgentDialog(_Dialog):
 
         if agent is not None and settings is not None:
             self._name.insert(0, agent.name)
+            self._description.insert(0, agent.description)
             self._working_dir.insert(0, settings.working_dir or "")
             self._paths.insert("1.0", "\n".join(settings.allowed_paths))
             for group, variable in self._groups.items():
@@ -196,6 +201,7 @@ class AgentDialog(_Dialog):
         template = self._template.get()
         return AgentForm(
             name=self._name.get(),
+            description=self._description.get(),
             model=self._model.get(),
             system_prompt=self._prompt.get("1.0", "end-1c"),
             tools=[*chosen, *extra],
