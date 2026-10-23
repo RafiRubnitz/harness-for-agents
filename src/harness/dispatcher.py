@@ -1,5 +1,6 @@
 """The running core as the GUI / CLI see it: maps commands to components (12 §2)."""
 
+import contextlib
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
@@ -36,6 +37,7 @@ from harness.core.types import AgentId, MemoryItemId, TextBlock
 from harness.core.utils.paths import HarnessHome
 from harness.memory import MemoryStore, SemanticMemory
 from harness.tools import ToolsManager
+from harness.tools.consts import WEB_SECRET_NAME
 
 _TEMPLATE_SKIPPED_FIELDS = frozenset({"name", "agent_name", "template"})
 _SECRETS_KEY = "secrets"
@@ -90,6 +92,7 @@ class CommandDispatcher:
             tools=[definition.name for definition in definitions],
             tool_groups=sorted({d.group for d in definitions if d.group is not None}),
             providers=[provider.value for provider in ProviderId],
+            key_names=[*(provider.value for provider in ProviderId), WEB_SECRET_NAME],
             user_profile=self._parts.config.user_profile(),
             model_providers={alias: m.provider.value for alias, m in config.models.items()},
             keys=self._keys(config),
@@ -97,7 +100,7 @@ class CommandDispatcher:
         )
 
     def _keys(self, config: HarnessConfig) -> dict[str, str]:
-        """The masked API key of every provider that has one (keyring or environment)."""
+        """The masked API key of every provider and of the web tools, when set."""
         keys: dict[str, str] = {}
         for name, provider in config.providers.items():
             if provider.api_key is None:
@@ -106,6 +109,8 @@ class CommandDispatcher:
                 keys[name] = mask(self._parts.config.expand(provider.api_key))
             except ConfigError:  # not set yet
                 continue
+        with contextlib.suppress(ConfigError):  # not set yet
+            keys[WEB_SECRET_NAME] = mask(self._parts.config.secret(WEB_SECRET_NAME))
         return keys
 
     async def submit(self, command: c.Command) -> None:

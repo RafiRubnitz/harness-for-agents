@@ -29,8 +29,10 @@ class FrontendInfo(BaseModel):
     user_profile: str
     model_providers: dict[str, str] = {}
     """Model alias -> the provider that serves it."""
+    key_names: list[str] = []
+    """Every key the settings dialog can set: the providers, then the web tools' key."""
     keys: dict[str, str] = {}
-    """Provider -> its API key in masked form (``sk-...a3f``); only providers that have one."""
+    """Key name -> the key in masked form (``sk-...a3f``); only names that have one."""
     embedder_url: str = ""
     """The configured embeddings server; empty when the harness runs its own."""
 
