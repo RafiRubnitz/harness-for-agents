@@ -36,6 +36,7 @@ from harness.core.events import (
 from harness.core.handle import CoreHandle
 from harness.core.lock import CoreLock
 from harness.core.types import AgentId, TextBlock
+from harness.tools.consts import WEB_SECRET_NAME
 from tests.consts import AGENT_NAME, TEST_API_KEY, TEST_MAX_STEPS
 from tests.fakes.adapter import text_response
 from tests.integration.conftest import CoreKit, next_payload
@@ -162,6 +163,20 @@ async def test_a_saved_api_key_is_shown_as_set_but_never_in_full(kit: CoreKit) -
     assert list(after) == [SECRET_NAME]
     assert after[SECRET_NAME] != TEST_API_KEY
     assert TEST_API_KEY not in changed.model_dump_json()
+
+
+async def test_the_web_key_can_be_set_from_the_settings_dialog(kit: CoreKit) -> None:
+    async with kit.launch() as core:
+        names = core.info().key_names
+        events = core.events()
+
+        await core.submit(ConfigSetSecret(secret_name=WEB_SECRET_NAME, value=TEST_API_KEY))
+        await next_payload(events, ConfigChanged)
+        after = core.info().keys
+
+    assert WEB_SECRET_NAME in names
+    assert list(after) == [WEB_SECRET_NAME]
+    assert after[WEB_SECRET_NAME] != TEST_API_KEY
 
 
 async def test_each_model_names_its_provider(core: CoreHandle) -> None:

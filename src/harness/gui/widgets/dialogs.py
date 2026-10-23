@@ -260,7 +260,7 @@ class SettingsDialog(_Dialog):
         theme = self._theme
         tab.grid_columnconfigure(0, weight=1)
         note = _label(tab, theme, "")
-        for index, provider in enumerate(info.providers):
+        for index, provider in enumerate(info.key_names):
             text = consts.LABEL_API_KEY.format(provider=provider, status=key_status(info, provider))
             title = _label(tab, theme, text)
             if provider in info.keys:
@@ -286,7 +286,7 @@ class SettingsDialog(_Dialog):
                     )
 
             button(tab, theme, consts.LABEL_SAVE, save).grid(row=2 * index + 1, column=1, padx=6)
-        note.grid(row=2 * len(info.providers), column=0, sticky="ew", pady=8)
+        note.grid(row=2 * len(info.key_names), column=0, sticky="ew", pady=8)
 
     def _memory(self, tab: tk.Misc, info: FrontendInfo) -> None:
         theme = self._theme
